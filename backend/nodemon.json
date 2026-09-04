@@ -1,0 +1,6 @@
+{
+  "watch": ["server.js", "db.js", "auth.js", "upload.js", "clinicaUtil.js", "notificar.js", "pdfRelatorioCirurgia.js", "routes"],
+  "ext": "js",
+  "delay": 400,
+  "verbose": false
+}
