@@ -30,7 +30,7 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f8fafc;
+  background-color: color-mix(in srgb, var(--color-brand-500) 7%, white);
   color: #0f172a;
 }
 
@@ -41,6 +41,13 @@ body {
 ::selection {
   background: var(--color-brand-200);
   color: var(--color-brand-900);
+}
+
+/* Fundo com leve tom da cor da clínica (--color-brand-500, sobrescrita por
+   clínica em AuthContext) por trás dos cartões brancos — usado no app depois
+   do login, em vez do cinza neutro plano de antes. */
+.bg-app {
+  background-color: color-mix(in srgb, var(--color-brand-500) 7%, white);
 }
 
 .bg-clinical-pattern {

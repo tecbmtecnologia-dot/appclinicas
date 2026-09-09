@@ -3,6 +3,7 @@ import type { Agendamento } from '../types'
 
 export interface FiltroAgendamentos {
   data?: string
+  mes?: string
   medico_id?: string
   paciente_id?: string
 }
@@ -11,6 +12,7 @@ function buildQuery(filtro?: FiltroAgendamentos) {
   if (!filtro) return ''
   const params = new URLSearchParams()
   if (filtro.data) params.set('data', filtro.data)
+  if (filtro.mes) params.set('mes', filtro.mes)
   if (filtro.medico_id) params.set('medico_id', filtro.medico_id)
   if (filtro.paciente_id) params.set('paciente_id', filtro.paciente_id)
   const qs = params.toString()

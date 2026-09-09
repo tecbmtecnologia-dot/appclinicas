@@ -1,25 +1,29 @@
 import { useEffect, useState } from 'react'
 import { Stethoscope } from 'lucide-react'
 import { Button, Card, EmptyState, Input, Label, Modal, PageHeader } from '../../components/ui'
-import { medicosApi } from '../../api/medicos'
-import type { Medico } from '../../types'
+import { medicosApi, type MedicoForm } from '../../api/medicos'
+import { hospitaisApi } from '../../api/hospitais'
+import type { Hospital, Medico } from '../../types'
 
-const vazio = { nome: '', crm: '', especialidade: '', telefone: '', email: '' }
+const vazio: MedicoForm = { nome: '', crm: '', especialidade: '', telefone: '', email: '', hospitais: [] }
 
 export default function Medicos() {
   const [medicos, setMedicos] = useState<Medico[]>([])
+  const [hospitais, setHospitais] = useState<Hospital[]>([])
   const [carregando, setCarregando] = useState(true)
   const [modalAberto, setModalAberto] = useState(false)
   const [editando, setEditando] = useState<Medico | null>(null)
-  const [form, setForm] = useState(vazio)
+  const [form, setForm] = useState<MedicoForm>(vazio)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
   function carregar() {
     setCarregando(true)
-    medicosApi
-      .listar()
-      .then(setMedicos)
+    Promise.all([medicosApi.listar(), hospitaisApi.listar()])
+      .then(([m, h]) => {
+        setMedicos(m)
+        setHospitais(h)
+      })
       .catch(() => setErro('Não foi possível carregar médicos. Verifique se o backend está rodando.'))
       .finally(() => setCarregando(false))
   }
@@ -34,8 +38,22 @@ export default function Medicos() {
 
   function abrirEdicao(m: Medico) {
     setEditando(m)
-    setForm({ nome: m.nome, crm: m.crm, especialidade: m.especialidade, telefone: m.telefone, email: m.email })
+    setForm({
+      nome: m.nome,
+      crm: m.crm,
+      especialidade: m.especialidade,
+      telefone: m.telefone,
+      email: m.email,
+      hospitais: m.hospitais.map((h) => h.id),
+    })
     setModalAberto(true)
+  }
+
+  function alternarHospital(id: string) {
+    setForm((f) => ({
+      ...f,
+      hospitais: f.hospitais?.includes(id) ? f.hospitais.filter((h) => h !== id) : [...(f.hospitais ?? []), id],
+    }))
   }
 
   async function salvar() {
@@ -86,6 +104,7 @@ export default function Medicos() {
                   <th className="px-4 py-2.5 font-medium">CRM</th>
                   <th className="px-4 py-2.5 font-medium">Especialidade</th>
                   <th className="px-4 py-2.5 font-medium">Telefone</th>
+                  <th className="px-4 py-2.5 font-medium">Hospitais</th>
                   <th className="px-4 py-2.5 font-medium"></th>
                 </tr>
               </thead>
@@ -96,6 +115,7 @@ export default function Medicos() {
                     <td className="px-4 py-2.5 text-slate-600">{m.crm}</td>
                     <td className="px-4 py-2.5 text-slate-600">{m.especialidade}</td>
                     <td className="px-4 py-2.5 text-slate-600">{m.telefone}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{m.hospitais.map((h) => h.nome).join(', ') || '—'}</td>
                     <td className="px-4 py-2.5 text-right space-x-2 whitespace-nowrap">
                       <Button variant="ghost" onClick={() => abrirEdicao(m)}>
                         Editar
@@ -137,6 +157,21 @@ export default function Medicos() {
               <Label>E-mail</Label>
               <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </div>
+          </div>
+          <div>
+            <Label>Hospitais que opera</Label>
+            {hospitais.length === 0 ? (
+              <p className="text-xs text-slate-400">Nenhum hospital cadastrado ainda — cadastre em "Hospitais" no menu.</p>
+            ) : (
+              <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-lg px-2 py-1.5 space-y-0.5">
+                {hospitais.map((h) => (
+                  <label key={h.id} className="flex items-center gap-2 text-sm px-1 py-1 rounded-lg hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" checked={form.hospitais?.includes(h.id) ?? false} onChange={() => alternarHospital(h.id)} />
+                    {h.nome}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setModalAberto(false)}>

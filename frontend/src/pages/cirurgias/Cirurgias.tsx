@@ -4,18 +4,23 @@ import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Selec
 import { cirurgiasApi, type CirurgiaForm } from '../../api/cirurgias'
 import { pacientesApi } from '../../api/pacientes'
 import { medicosApi } from '../../api/medicos'
+import { auxiliaresApi } from '../../api/auxiliares'
+import { hospitaisApi } from '../../api/hospitais'
+import { itensCirurgiaApi } from '../../api/itensCirurgia'
 import { useAuth } from '../../contexts/AuthContext'
 import { ApiError } from '../../api/client'
-import type { Cirurgia, Medico, Paciente } from '../../types'
+import type { Auxiliar, Cirurgia, Hospital, ItemCirurgia, Medico, Paciente } from '../../types'
 
 const vazio: CirurgiaForm = {
   paciente_id: '',
   medico_id: '',
   nome_cirurgia: '',
   data_prevista: '',
-  local_hospital: '',
+  hospital_id: '',
   equipe: '',
   observacoes: '',
+  auxiliares: [],
+  itens: [],
 }
 
 function formatarData(v?: string | null) {
@@ -31,6 +36,9 @@ export default function Cirurgias() {
   const [cirurgias, setCirurgias] = useState<Cirurgia[]>([])
   const [pacientes, setPacientes] = useState<Paciente[]>([])
   const [medicos, setMedicos] = useState<Medico[]>([])
+  const [auxiliares, setAuxiliares] = useState<Auxiliar[]>([])
+  const [hospitais, setHospitais] = useState<Hospital[]>([])
+  const [itensCatalogo, setItensCatalogo] = useState<ItemCirurgia[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [modalAberto, setModalAberto] = useState(false)
@@ -41,11 +49,21 @@ export default function Cirurgias() {
 
   function carregar() {
     setCarregando(true)
-    Promise.all([cirurgiasApi.listar(), pacientesApi.listar(), medicosApi.listar()])
-      .then(([c, p, m]) => {
+    Promise.all([
+      cirurgiasApi.listar(),
+      pacientesApi.listar(),
+      medicosApi.listar(),
+      auxiliaresApi.listar(),
+      hospitaisApi.listar(),
+      itensCirurgiaApi.listar(),
+    ])
+      .then(([c, p, m, a, h, i]) => {
         setCirurgias(c)
         setPacientes(p)
         setMedicos(m)
+        setAuxiliares(a)
+        setHospitais(h)
+        setItensCatalogo(i)
       })
       .catch(() => setErro('Não foi possível carregar as cirurgias. Verifique se o backend está rodando.'))
       .finally(() => setCarregando(false))
@@ -67,12 +85,39 @@ export default function Cirurgias() {
       medico_id: c.medico_id ?? '',
       nome_cirurgia: c.nome_cirurgia,
       data_prevista: c.data_prevista ?? '',
-      local_hospital: c.local_hospital ?? '',
+      hospital_id: c.hospital_id ?? '',
       equipe: c.equipe ?? '',
       observacoes: c.observacoes ?? '',
+      auxiliares: c.auxiliares.map((a) => a.id),
+      itens: c.itens.map((i) => ({ item_id: i.id, quantidade: i.quantidade })),
     })
     setErroForm(null)
     setModalAberto(true)
+  }
+
+  function alternarAuxiliar(id: string) {
+    setForm((f) => ({
+      ...f,
+      auxiliares: f.auxiliares?.includes(id) ? f.auxiliares.filter((a) => a !== id) : [...(f.auxiliares ?? []), id],
+    }))
+  }
+
+  function alternarItem(id: string) {
+    setForm((f) => {
+      const atual = f.itens ?? []
+      const jaSelecionado = atual.some((it) => it.item_id === id)
+      return {
+        ...f,
+        itens: jaSelecionado ? atual.filter((it) => it.item_id !== id) : [...atual, { item_id: id, quantidade: 1 }],
+      }
+    })
+  }
+
+  function definirQuantidadeItem(id: string, quantidade: number) {
+    setForm((f) => ({
+      ...f,
+      itens: (f.itens ?? []).map((it) => (it.item_id === id ? { ...it, quantidade } : it)),
+    }))
   }
 
   async function salvar() {
@@ -108,6 +153,12 @@ export default function Cirurgias() {
     await cirurgiasApi.remover(c.id)
     carregar()
   }
+
+  const medicoDoForm = medicos.find((m) => m.id === form.medico_id)
+  const hospitaisDisponiveis =
+    medicoDoForm && medicoDoForm.hospitais.length > 0
+      ? hospitais.filter((h) => medicoDoForm.hospitais.some((mh) => mh.id === h.id))
+      : hospitais
 
   async function baixarPdf(c: Cirurgia) {
     try {
@@ -149,8 +200,18 @@ export default function Cirurgias() {
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5">
                     {c.medico_nome ? `Dr(a). ${c.medico_nome}` : 'Sem médico definido'} · Data prevista: {formatarData(c.data_prevista)}
-                    {c.local_hospital ? ` · ${c.local_hospital}` : ''}
+                    {c.hospital_nome ? ` · ${c.hospital_nome}` : ''}
                   </p>
+                  {c.auxiliares.length > 0 && (
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Auxiliares: {c.auxiliares.map((a) => a.nome).join(', ')}
+                    </p>
+                  )}
+                  {c.itens.length > 0 && (
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Itens usados: {c.itens.map((i) => `${i.nome} (×${i.quantidade})`).join(', ')}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="ghost" onClick={() => abrirEdicao(c)}>
@@ -224,11 +285,64 @@ export default function Cirurgias() {
             </div>
           </div>
           <div>
-            <Label>Local / Hospital</Label>
-            <Input value={form.local_hospital ?? ''} onChange={(e) => setForm({ ...form, local_hospital: e.target.value })} />
+            <Label>Hospital</Label>
+            <Select value={form.hospital_id ?? ''} onChange={(e) => setForm({ ...form, hospital_id: e.target.value })}>
+              <option value="">A definir</option>
+              {hospitaisDisponiveis.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.nome}
+                </option>
+              ))}
+            </Select>
+            {hospitais.length === 0 && (
+              <p className="text-xs text-slate-400 mt-1">Nenhum hospital cadastrado ainda — cadastre em "Hospitais" no menu.</p>
+            )}
           </div>
           <div>
-            <Label>Equipe (anestesista, auxiliares...)</Label>
+            <Label>Auxiliares</Label>
+            {auxiliares.length === 0 ? (
+              <p className="text-xs text-slate-400">Nenhum auxiliar cadastrado ainda — cadastre em "Auxiliares" no menu.</p>
+            ) : (
+              <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-lg px-2 py-1.5 space-y-0.5">
+                {auxiliares.map((a) => (
+                  <label key={a.id} className="flex items-center gap-2 text-sm px-1 py-1 rounded-lg hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" checked={form.auxiliares?.includes(a.id) ?? false} onChange={() => alternarAuxiliar(a.id)} />
+                    {a.nome}
+                    {a.funcao ? <span className="text-slate-400">({a.funcao})</span> : null}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          {itensCatalogo.length > 0 && (
+            <div>
+              <Label>Itens usados</Label>
+              <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg px-2 py-1.5 space-y-0.5">
+                {itensCatalogo.map((i) => {
+                  const selecionado = form.itens?.find((it) => it.item_id === i.id)
+                  return (
+                    <div key={i.id} className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-slate-50">
+                      <label className="flex items-center gap-2 text-sm flex-1 cursor-pointer">
+                        <input type="checkbox" checked={!!selecionado} onChange={() => alternarItem(i.id)} />
+                        {i.nome}
+                      </label>
+                      {selecionado && (
+                        <input
+                          type="number"
+                          min={1}
+                          value={selecionado.quantidade}
+                          onChange={(e) => definirQuantidadeItem(i.id, Math.max(1, Number(e.target.value) || 1))}
+                          className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500"
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          <div>
+            <Label>Equipe (observações adicionais)</Label>
             <Input value={form.equipe ?? ''} onChange={(e) => setForm({ ...form, equipe: e.target.value })} />
           </div>
           <div>

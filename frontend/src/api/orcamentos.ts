@@ -1,10 +1,15 @@
 import { api } from './client'
-import type { ItemOrcamento, Orcamento, StatusOrcamento } from '../types'
+import type { ItemOrcamentoCatalogo, Orcamento, StatusOrcamento } from '../types'
+
+export interface ItemOrcamentoInput {
+  item_id: string
+  quantidade?: number
+}
 
 export interface OrcamentoForm {
   paciente_id: string
   titulo: string
-  itens: ItemOrcamento[]
+  itens: ItemOrcamentoInput[]
   observacoes?: string | null
   status?: StatusOrcamento
 }
@@ -20,4 +25,11 @@ export const orcamentosApi = {
   criar: (data: OrcamentoForm) => api.post<Orcamento>('/orcamentos', data),
   atualizar: (id: string, data: Partial<OrcamentoForm>) => api.put<Orcamento>(`/orcamentos/${id}`, data),
   remover: (id: string) => api.del<void>(`/orcamentos/${id}`),
+  catalogo: {
+    listar: (ativo?: boolean) => api.get<ItemOrcamentoCatalogo[]>(`/orcamentos/catalogo-itens${ativo !== undefined ? `?ativo=${ativo}` : ''}`),
+    criar: (data: { nome: string; valor: number }) => api.post<ItemOrcamentoCatalogo>('/orcamentos/catalogo-itens', data),
+    atualizar: (id: string, data: Partial<{ nome: string; valor: number; ativo: boolean }>) =>
+      api.put<ItemOrcamentoCatalogo>(`/orcamentos/catalogo-itens/${id}`, data),
+    remover: (id: string) => api.del<void>(`/orcamentos/catalogo-itens/${id}`),
+  },
 }

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { nanoid } from 'nanoid'
 import { db } from '../db.js'
 import { requireRole } from '../auth.js'
+import { uploadComprovante } from '../upload.js'
 
 const router = Router()
 const ACESSO = requireRole('admin', 'recepcao', 'financeiro')
@@ -90,6 +91,15 @@ router.put('/:id', (req, res) => {
     `UPDATE pagamentos SET descricao=?, valor=?, forma_pagamento=?, status=?, data_vencimento=?, data_pagamento=? WHERE id=?`,
   ).run(merged.descricao, merged.valor, merged.forma_pagamento, merged.status, merged.data_vencimento, merged.data_pagamento, req.params.id)
 
+  res.json(db.prepare(SELECT_JOIN + ' WHERE pg.id = ?').get(req.params.id))
+})
+
+router.post('/:id/comprovante', uploadComprovante.single('comprovante'), (req, res) => {
+  const existente = db.prepare('SELECT id FROM pagamentos WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+  if (!existente) return res.status(404).json({ error: 'Pagamento não encontrado' })
+  if (!req.file) return res.status(400).json({ error: 'Envie uma imagem ou PDF' })
+  const comprovanteUrl = `/uploads/comprovantes/${req.file.filename}`
+  db.prepare('UPDATE pagamentos SET comprovante_url = ? WHERE id = ?').run(comprovanteUrl, req.params.id)
   res.json(db.prepare(SELECT_JOIN + ' WHERE pg.id = ?').get(req.params.id))
 })
 

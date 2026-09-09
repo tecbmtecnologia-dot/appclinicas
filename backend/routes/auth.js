@@ -11,7 +11,7 @@ function clinicaPublica(clinica) {
 }
 
 router.post('/login', (req, res) => {
-  const { email, senha } = req.body
+  const { email, senha, lembrar } = req.body
   if (!email || !senha) return res.status(400).json({ error: 'E-mail e senha são obrigatórios' })
 
   const usuario = db.prepare('SELECT * FROM usuarios WHERE email = ?').get(String(email).toLowerCase())
@@ -24,7 +24,7 @@ router.post('/login', (req, res) => {
     return res.status(403).json({ error: 'Esta clínica está inativa. Entre em contato com o suporte.' })
   }
 
-  const token = assinarToken(usuario)
+  const token = assinarToken(usuario, Boolean(lembrar))
   res.json({
     token,
     usuario: {
@@ -32,14 +32,16 @@ router.post('/login', (req, res) => {
       nome: usuario.nome,
       email: usuario.email,
       role: usuario.role,
+      cargo: usuario.cargo,
       clinica_id: usuario.clinica_id,
+      medico_id: usuario.medico_id,
       clinica: clinicaPublica(clinica),
     },
   })
 })
 
 router.get('/me', requireAuth, (req, res) => {
-  const usuario = db.prepare('SELECT id, nome, email, role, clinica_id, ativo FROM usuarios WHERE id = ?').get(req.usuario.id)
+  const usuario = db.prepare('SELECT id, nome, email, role, cargo, clinica_id, medico_id, ativo FROM usuarios WHERE id = ?').get(req.usuario.id)
   if (!usuario || !usuario.ativo) return res.status(401).json({ error: 'Usuário não encontrado' })
   const clinica = usuario.clinica_id ? db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
   res.json({ ...usuario, clinica: clinicaPublica(clinica) })

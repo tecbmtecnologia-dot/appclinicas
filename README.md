@@ -114,10 +114,39 @@ complexidade:
 3. **Notificações** (lembrete de consulta por e-mail/SMS/push).
 4. **Relatórios e faturamento** (convênios, exportação de dados, cobrança das
    clínicas clientes pela assinatura).
-5. **Deploy em produção**: hoje o backend roda localmente com SQLite (ótimo
-   para desenvolvimento). Para atender clínicas de verdade pela internet, o
-   backend precisaria ser hospedado (ex: Railway, Render, um VPS) com um
-   banco como PostgreSQL, e um domínio com HTTPS.
+5. ~~**Deploy em produção**~~ — feito, ver seção **Deploy** abaixo.
+
+## Deploy
+
+A infraestrutura de deploy já está preparada no repositório (`render.yaml` e
+`netlify.toml` na raiz). Falta só criar as contas/serviços e preencher as
+URLs — nada disso foi feito ainda:
+
+1. **Backend no Render**: crie um serviço a partir do `render.yaml` (New →
+   Blueprint, apontando pro repositório). Ele já vem com disco persistente
+   (o SQLite e os uploads continuam existindo entre deploys — a migração
+   para Postgres/Supabase fica para depois, como um projeto à parte).
+2. **Frontend no Netlify**: crie o site a partir do repositório (o
+   `netlify.toml` já configura build e rotas). Depois:
+   - No Render, edite a env var `CORS_ORIGIN` do backend para a URL real do
+     site Netlify (ex: `https://app-clinicas.netlify.app`).
+   - No `netlify.toml`, troque as duas ocorrências de `SEU-BACKEND` pela URL
+     real do serviço Render, e faça um novo deploy do Netlify.
+   - No Netlify, defina a env var de build `VITE_SOCKET_URL` com a URL do
+     Render (usada só pela videochamada/chat, que precisa de conexão direta
+     — o Netlify não repassa WebSocket pelas rotas do `/api`).
+3. **Supabase**: adiado por decisão — hoje o banco é SQLite com disco
+   persistente no Render, que já resolve não perder dados. Migrar as ~320
+   consultas SQL espalhadas em 33 arquivos de rotas para Postgres é um
+   projeto separado, para ser feito com calma quando o Supabase for
+   realmente ativado.
+
+**Limitação conhecida:** os links de instalação por perfil (`/instalar/:clinicaSlug/:perfilSlug`)
+hoje só ganham título/ícone certos rodando `npm run dev` — essa lógica está
+em um plugin do Vite que só existe em desenvolvimento. Em produção, o link
+ainda funciona (mostra o app normalmente), só o nome/ícone que aparecem ao
+instalar na tela inicial ficam com o nome genérico do PWA em vez do nome do
+perfil específico. Corrigir isso em produção fica pra depois.
 
 ## Dados de exemplo
 

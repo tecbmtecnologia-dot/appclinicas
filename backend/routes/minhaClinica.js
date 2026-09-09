@@ -16,30 +16,43 @@ router.put('/', (req, res) => {
   const existente = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Clínica não encontrada' })
 
+  const TIPOS_MARCA_DAGUA = new Set(['nenhuma', 'logo', 'texto'])
   const merged = {
     nome: req.body.nome ?? existente.nome,
     cor_primaria: req.body.cor_primaria !== undefined ? req.body.cor_primaria || null : existente.cor_primaria,
     cnpj: req.body.cnpj !== undefined ? req.body.cnpj || null : existente.cnpj,
     endereco: req.body.endereco !== undefined ? req.body.endereco || null : existente.endereco,
+    telefone: req.body.telefone !== undefined ? req.body.telefone || null : existente.telefone,
+    email: req.body.email !== undefined ? req.body.email || null : existente.email,
     especialidades:
       req.body.especialidades !== undefined ? especialidadesParaTexto(req.body.especialidades) : existente.especialidades,
     latitude: req.body.latitude !== undefined ? (req.body.latitude === '' ? null : Number(req.body.latitude)) : existente.latitude,
     longitude: req.body.longitude !== undefined ? (req.body.longitude === '' ? null : Number(req.body.longitude)) : existente.longitude,
     raio_metros:
       req.body.raio_metros !== undefined ? (req.body.raio_metros === '' ? null : Number(req.body.raio_metros)) : existente.raio_metros,
+    marca_dagua_tipo:
+      req.body.marca_dagua_tipo !== undefined && TIPOS_MARCA_DAGUA.has(req.body.marca_dagua_tipo)
+        ? req.body.marca_dagua_tipo
+        : existente.marca_dagua_tipo,
+    marca_dagua_texto: req.body.marca_dagua_texto !== undefined ? req.body.marca_dagua_texto || null : existente.marca_dagua_texto,
   }
 
   db.prepare(
-    `UPDATE clinicas SET nome=?, cor_primaria=?, cnpj=?, endereco=?, especialidades=?, latitude=?, longitude=?, raio_metros=? WHERE id=?`,
+    `UPDATE clinicas SET nome=?, cor_primaria=?, cnpj=?, endereco=?, telefone=?, email=?, especialidades=?, latitude=?, longitude=?, raio_metros=?,
+       marca_dagua_tipo=?, marca_dagua_texto=? WHERE id=?`,
   ).run(
     merged.nome,
     merged.cor_primaria,
     merged.cnpj,
     merged.endereco,
+    merged.telefone,
+    merged.email,
     merged.especialidades,
     merged.latitude,
     merged.longitude,
     merged.raio_metros,
+    merged.marca_dagua_tipo,
+    merged.marca_dagua_texto,
     req.usuario.clinica_id,
   )
 

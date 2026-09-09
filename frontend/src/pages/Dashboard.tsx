@@ -5,25 +5,34 @@ import { Card, PageHeader } from '../components/ui'
 import { pacientesApi } from '../api/pacientes'
 import { medicosApi } from '../api/medicos'
 import { agendamentosApi } from '../api/agendamentos'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function Dashboard() {
+  const { usuario } = useAuth()
+  const ehMedico = usuario?.role === 'medico'
   const [counts, setCounts] = useState({ pacientes: 0, medicos: 0, hoje: 0 })
   const [erro, setErro] = useState<string | null>(null)
 
   useEffect(() => {
     const hoje = new Date().toISOString().slice(0, 10)
-    Promise.all([pacientesApi.listar(), medicosApi.listar(), agendamentosApi.listar({ data: hoje })])
+    Promise.all([
+      pacientesApi.listar(),
+      medicosApi.listar(),
+      agendamentosApi.listar({ data: hoje, medico_id: ehMedico ? (usuario?.medico_id ?? undefined) : undefined }),
+    ])
       .then(([pacientes, medicos, agendamentosHoje]) => {
         setCounts({ pacientes: pacientes.length, medicos: medicos.length, hoje: agendamentosHoje.length })
       })
       .catch(() => setErro('Não foi possível conectar à API. Verifique se o backend está rodando (npm run dev na pasta backend).'))
-  }, [])
+  }, [ehMedico, usuario?.medico_id])
 
-  const cards: { label: string; value: number; to: string; icon: LucideIcon }[] = [
-    { label: 'Pacientes cadastrados', value: counts.pacientes, to: '/administrativo/pacientes', icon: Users },
-    { label: 'Médicos cadastrados', value: counts.medicos, to: '/administrativo/medicos', icon: Stethoscope },
-    { label: 'Consultas hoje', value: counts.hoje, to: '/agendamento', icon: CalendarDays },
-  ]
+  const cards: { label: string; value: number; to: string; icon: LucideIcon }[] = ehMedico
+    ? [{ label: 'Meus agendamentos hoje', value: counts.hoje, to: '/agendamento', icon: CalendarDays }]
+    : [
+        { label: 'Pacientes cadastrados', value: counts.pacientes, to: '/administrativo/pacientes', icon: Users },
+        { label: 'Médicos cadastrados', value: counts.medicos, to: '/administrativo/medicos', icon: Stethoscope },
+        { label: 'Consultas hoje', value: counts.hoje, to: '/agendamento', icon: CalendarDays },
+      ]
 
   return (
     <div>
@@ -35,7 +44,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div className={`grid grid-cols-1 ${ehMedico ? 'sm:grid-cols-1 max-w-xs' : 'sm:grid-cols-3'} gap-4 mb-8`}>
         {cards.map((c) => (
           <Link key={c.label} to={c.to}>
             <Card className="p-5 hover:border-brand-300 hover:-translate-y-0.5 transition-all">

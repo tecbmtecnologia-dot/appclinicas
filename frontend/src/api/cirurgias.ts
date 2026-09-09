@@ -6,9 +6,12 @@ export interface CirurgiaForm {
   medico_id?: string | null
   nome_cirurgia: string
   data_prevista?: string | null
+  hospital_id?: string | null
   local_hospital?: string | null
   equipe?: string | null
   observacoes?: string | null
+  auxiliares?: string[]
+  itens?: { item_id: string; quantidade: number }[]
 }
 
 export const cirurgiasApi = {

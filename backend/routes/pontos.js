@@ -3,11 +3,18 @@ import { nanoid } from 'nanoid'
 import { db } from '../db.js'
 import { requireRole } from '../auth.js'
 import { uploadSelfiePonto } from '../upload.js'
+import { gerarFolhaFrequenciaPDF } from '../pdfFolhaFrequencia.js'
 
 const router = Router()
 const GESTAO_RH = requireRole('admin', 'coordenador', 'financeiro')
+// medico, pj e coordenador não usam ponto (sem controle de jornada/banco de horas pra esses perfis)
+const PODE_BATER_PONTO = requireRole('admin', 'enfermagem', 'recepcao', 'financeiro')
 const RAIO_PADRAO_METROS = 200
 const TIPOS = ['entrada', 'inicio_intervalo', 'fim_intervalo', 'saida']
+// Pseudo-tipo: quando a pessoa não consegue parar pro almoço, registra os dois
+// marcos (início e fim do intervalo) no mesmo instante — intervalo de duração
+// zero, então calcularHorasTrabalhadas conta o período inteiro como trabalhado.
+const TIPO_SEM_INTERVALO = 'sem_intervalo'
 
 function distanciaMetros(lat1, lon1, lat2, lon2) {
   const R = 6371000
@@ -50,7 +57,93 @@ function calcularHorasTrabalhadas(registros) {
   return minutos
 }
 
-router.get('/', (req, res) => {
+// Jornada oficial cadastrada pelo admin (horário de entrada/intervalo/saída) — usada
+// só como referência de meta semanal, não altera o cálculo do que foi de fato trabalhado.
+function minutosDoHorario(hhmm) {
+  if (!hhmm) return null
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
+}
+
+function horasEsperadasPorDia(usuario) {
+  const entrada = minutosDoHorario(usuario.horario_entrada)
+  const saida = minutosDoHorario(usuario.horario_saida)
+  if (entrada == null || saida == null) return null
+  let minutos = saida - entrada
+  const inicioIntervalo = minutosDoHorario(usuario.horario_inicio_intervalo)
+  const fimIntervalo = minutosDoHorario(usuario.horario_fim_intervalo)
+  if (inicioIntervalo != null && fimIntervalo != null) {
+    minutos -= fimIntervalo - inicioIntervalo
+  }
+  return minutos / 60
+}
+
+function jornadaDoUsuario(usuario) {
+  const horasDia = horasEsperadasPorDia(usuario)
+  if (horasDia == null) return null
+  return {
+    entrada: usuario.horario_entrada,
+    inicio_intervalo: usuario.horario_inicio_intervalo,
+    fim_intervalo: usuario.horario_fim_intervalo,
+    saida: usuario.horario_saida,
+    horas_dia: horasDia,
+  }
+}
+
+// Semana de segunda a domingo que contém a data de referência (padrão: hoje).
+function limitesSemana(referenciaISO) {
+  const ref = new Date(`${referenciaISO}T00:00:00`)
+  const diaSemana = ref.getDay()
+  const deltaSegunda = diaSemana === 0 ? -6 : 1 - diaSemana
+  const segunda = new Date(ref)
+  segunda.setDate(ref.getDate() + deltaSegunda)
+  const domingo = new Date(segunda)
+  domingo.setDate(segunda.getDate() + 6)
+  const fmt = (d) => d.toISOString().slice(0, 10)
+  return { inicio: fmt(segunda), fim: fmt(domingo) }
+}
+
+function resumoSemana(usuario, referenciaISO) {
+  const { inicio, fim } = limitesSemana(referenciaISO || new Date().toISOString().slice(0, 10))
+  const registros = db
+    .prepare(
+      `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
+    )
+    .all(usuario.id, inicio, fim)
+
+  const porDia = {}
+  for (const r of registros) {
+    const dia = r.data_hora.slice(0, 10)
+    if (!porDia[dia]) porDia[dia] = []
+    porDia[dia].push(r)
+  }
+  const dias = Object.entries(porDia)
+    .map(([data, regs]) => ({ data, horas_trabalhadas: Math.round((calcularHorasTrabalhadas(regs) / 60) * 100) / 100 }))
+    .sort((a, b) => a.data.localeCompare(b.data))
+
+  const horasTrabalhadas = Math.round((calcularHorasTrabalhadas(registros) / 60) * 100) / 100
+  const jornada = jornadaDoUsuario(usuario)
+  // Meta semanal: usa o valor direto cadastrado (carga_horaria_semanal_horas) quando existir;
+  // senão cai pro cálculo a partir da jornada (horário de entrada/intervalo/saída × dias da semana).
+  const horasEsperadas =
+    usuario.carga_horaria_semanal_horas != null && usuario.carga_horaria_semanal_horas > 0
+      ? usuario.carga_horaria_semanal_horas
+      : jornada
+        ? Math.round(jornada.horas_dia * (usuario.dias_trabalho_semana || 5) * 100) / 100
+        : null
+
+  return {
+    inicio,
+    fim,
+    dias,
+    horas_trabalhadas: horasTrabalhadas,
+    horas_esperadas: horasEsperadas,
+    saldo: horasEsperadas != null ? Math.round((horasTrabalhadas - horasEsperadas) * 100) / 100 : null,
+    jornada,
+  }
+}
+
+router.get('/', PODE_BATER_PONTO, (req, res) => {
   const alvo = req.query.usuario_id && ['admin', 'coordenador', 'financeiro'].includes(req.usuario.role)
     ? req.query.usuario_id
     : req.usuario.id
@@ -73,9 +166,7 @@ router.get('/resumo', GESTAO_RH, (req, res) => {
   const { mes, ano } = req.query
   const referencia = mes && ano ? `${ano}-${String(mes).padStart(2, '0')}` : new Date().toISOString().slice(0, 7)
 
-  const usuarios = db
-    .prepare('SELECT id, nome, role, carga_horaria_mensal_horas FROM usuarios WHERE clinica_id = ? AND ativo = 1')
-    .all(req.usuario.clinica_id)
+  const usuarios = db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1').all(req.usuario.clinica_id)
 
   const resumo = usuarios.map((u) => {
     const registros = db
@@ -89,57 +180,170 @@ router.get('/resumo', GESTAO_RH, (req, res) => {
     return {
       usuario_id: u.id,
       usuario_nome: u.nome,
+      foto_url: u.foto_url,
       role: u.role,
       meta_horas: u.carga_horaria_mensal_horas,
       horas_trabalhadas: Math.round(horasTrabalhadas * 100) / 100,
       saldo_horas: Math.round(saldoHoras * 100) / 100,
       total_registros: registros.length,
+      jornada: jornadaDoUsuario(u),
+      semana_atual: resumoSemana(u),
     }
   })
 
   res.json({ referencia, resumo })
 })
 
-router.post('/', uploadSelfiePonto.single('foto'), (req, res) => {
+router.get('/semana', PODE_BATER_PONTO, (req, res) => {
+  const alvo =
+    req.query.usuario_id && ['admin', 'coordenador', 'financeiro'].includes(req.usuario.role)
+      ? req.query.usuario_id
+      : req.usuario.id
+
+  const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND clinica_id = ?').get(alvo, req.usuario.clinica_id)
+  if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado' })
+
+  res.json({
+    usuario_id: usuario.id,
+    usuario_nome: usuario.nome,
+    ...resumoSemana(usuario, req.query.data),
+  })
+})
+
+// Folha de frequência — período de apuração do dia 21 do mês anterior ao dia 20
+// do mês de referência (padrão de folha de pagamento usado pela clínica).
+// Recepção só enxerga a própria folha (força o filtro pro próprio usuário,
+// ignora qualquer tentativa de ver a de outra pessoa); GESTAO_RH vê todo mundo.
+router.get('/folha-frequencia.pdf', requireRole('admin', 'coordenador', 'financeiro', 'recepcao'), (req, res) => {
+  const hoje = new Date()
+  const mesRef = req.query.mes ? Number(req.query.mes) : hoje.getMonth() + 1
+  const anoRef = req.query.ano ? Number(req.query.ano) : hoje.getFullYear()
+
+  let mesAnterior = mesRef - 1
+  let anoAnterior = anoRef
+  if (mesAnterior === 0) {
+    mesAnterior = 12
+    anoAnterior -= 1
+  }
+  const inicio = `${anoAnterior}-${String(mesAnterior).padStart(2, '0')}-21`
+  const fim = `${anoRef}-${String(mesRef).padStart(2, '0')}-20`
+
+  const usuarios =
+    req.usuario.role === 'recepcao'
+      ? db.prepare('SELECT * FROM usuarios WHERE id = ? AND clinica_id = ? AND ativo = 1').all(req.usuario.id, req.usuario.clinica_id)
+      : db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1 ORDER BY nome COLLATE NOCASE').all(req.usuario.clinica_id)
+
+  const funcionarios = usuarios.map((u) => {
+    const registros = db
+      .prepare(
+        `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
+      )
+      .all(u.id, inicio, fim)
+
+    const porDia = {}
+    for (const r of registros) {
+      const dia = r.data_hora.slice(0, 10)
+      if (!porDia[dia]) porDia[dia] = []
+      porDia[dia].push(r)
+    }
+
+    const jornada = jornadaDoUsuario(u)
+    const dias = Object.entries(porDia)
+      .map(([data, regs]) => {
+        const porTipo = {}
+        for (const r of regs) {
+          if (!porTipo[r.tipo]) porTipo[r.tipo] = r.data_hora
+        }
+        const trabalhado = calcularHorasTrabalhadas(regs) / 60
+        const saldo = jornada ? trabalhado - jornada.horas_dia : null
+        return {
+          data,
+          entrada: porTipo.entrada || null,
+          inicio_intervalo: porTipo.inicio_intervalo || null,
+          fim_intervalo: porTipo.fim_intervalo || null,
+          saida: porTipo.saida || null,
+          trabalhado: Math.round(trabalhado * 100) / 100,
+          saldo: saldo != null ? Math.round(saldo * 100) / 100 : null,
+        }
+      })
+      .sort((a, b) => a.data.localeCompare(b.data))
+
+    return { nome: u.nome, jornada, dias }
+  })
+
+  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  gerarFolhaFrequenciaPDF(res, { clinica, periodo: { inicio, fim }, funcionarios })
+})
+
+router.post('/', PODE_BATER_PONTO, uploadSelfiePonto.single('foto'), (req, res) => {
   const { tipo, latitude, longitude } = req.body
-  if (!TIPOS.includes(tipo)) return res.status(400).json({ error: 'Tipo de marcação inválido' })
+  if (!TIPOS.includes(tipo) && tipo !== TIPO_SEM_INTERVALO) {
+    return res.status(400).json({ error: 'Tipo de marcação inválido' })
+  }
+  if (!req.file) return res.status(400).json({ error: 'A foto é obrigatória para bater o ponto' })
+
+  const lat = latitude !== undefined && latitude !== '' ? Number(latitude) : null
+  const lon = longitude !== undefined && longitude !== '' ? Number(longitude) : null
+  if (lat == null || lon == null || Number.isNaN(lat) || Number.isNaN(lon)) {
+    return res.status(400).json({ error: 'Não foi possível obter sua localização. Ative o GPS e permita o acesso à localização para bater o ponto.' })
+  }
 
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.usuario.id)
   const ref = localReferencia(usuario)
 
-  const lat = latitude !== undefined ? Number(latitude) : null
-  const lon = longitude !== undefined ? Number(longitude) : null
-
   let distancia = null
   let dentroRaio = true
-  if (ref && lat != null && lon != null && !Number.isNaN(lat) && !Number.isNaN(lon)) {
+  if (ref) {
     distancia = distanciaMetros(ref.latitude, ref.longitude, lat, lon)
     dentroRaio = distancia <= ref.raio
+    if (!dentroRaio) {
+      return res.status(403).json({
+        error: `Você está fora da área permitida (${Math.round(distancia)}m de ${ref.nome}, raio de ${ref.raio}m). O ponto não foi registrado.`,
+      })
+    }
   }
 
-  const id = nanoid()
-  const fotoUrl = req.file ? `/uploads/pontos/${req.file.filename}` : null
-  db.prepare(
-    `INSERT INTO pontos (id, clinica_id, usuario_id, tipo, data_hora, latitude, longitude, distancia_metros, dentro_raio, foto_url)
-     VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    req.usuario.clinica_id,
-    req.usuario.id,
-    tipo,
-    lat,
-    lon,
-    distancia,
-    dentroRaio ? 1 : 0,
-    fotoUrl,
-  )
+  const fotoUrl = `/uploads/pontos/${req.file.filename}`
 
-  const registro = db.prepare('SELECT * FROM pontos WHERE id = ?').get(id)
+  function inserirPonto(tipoReal) {
+    const id = nanoid()
+    db.prepare(
+      `INSERT INTO pontos (id, clinica_id, usuario_id, tipo, data_hora, latitude, longitude, distancia_metros, dentro_raio, foto_url)
+       VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?)`,
+    ).run(id, req.usuario.clinica_id, req.usuario.id, tipoReal, lat, lon, distancia, dentroRaio ? 1 : 0, fotoUrl)
+    return id
+  }
+
+  const idsGerados = tipo === TIPO_SEM_INTERVALO ? [inserirPonto('inicio_intervalo'), inserirPonto('fim_intervalo')] : [inserirPonto(tipo)]
+
+  const registro = db.prepare('SELECT * FROM pontos WHERE id = ?').get(idsGerados[idsGerados.length - 1])
   res.status(201).json({
     ...registro,
+    tipo: tipo === TIPO_SEM_INTERVALO ? TIPO_SEM_INTERVALO : registro.tipo,
     distancia_metros: distancia != null ? Math.round(distancia) : null,
     local_referencia: ref?.nome ?? null,
   })
+})
+
+// Lançamento manual pelo RH/admin — sem foto nem geolocalização, pra corrigir
+// esquecimentos ou lançar histórico de quem não usa o app.
+router.post('/manual', GESTAO_RH, (req, res) => {
+  const { usuario_id, tipo, data, hora } = req.body
+  if (!usuario_id || !tipo || !data || !hora) {
+    return res.status(400).json({ error: 'usuario_id, tipo, data e hora são obrigatórios' })
+  }
+  if (!TIPOS.includes(tipo)) return res.status(400).json({ error: 'Tipo de marcação inválido' })
+
+  const usuario = db.prepare('SELECT id FROM usuarios WHERE id = ? AND clinica_id = ?').get(usuario_id, req.usuario.clinica_id)
+  if (!usuario) return res.status(400).json({ error: 'Usuário inválido' })
+
+  const id = nanoid()
+  db.prepare(
+    `INSERT INTO pontos (id, clinica_id, usuario_id, tipo, data_hora, dentro_raio, lancado_manualmente, criado_por)
+     VALUES (?, ?, ?, ?, ?, 1, 1, ?)`,
+  ).run(id, req.usuario.clinica_id, usuario_id, tipo, `${data} ${hora}:00`, req.usuario.id)
+
+  res.status(201).json(db.prepare('SELECT * FROM pontos WHERE id = ?').get(id))
 })
 
 export default router

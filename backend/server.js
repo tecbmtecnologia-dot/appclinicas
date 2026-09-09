@@ -9,7 +9,14 @@ import { db } from './db.js'
 
 import pacientesRouter from './routes/pacientes.js'
 import medicosRouter from './routes/medicos.js'
+import auxiliaresRouter from './routes/auxiliares.js'
+import hospitaisRouter from './routes/hospitais.js'
+import itensCirurgiaRouter from './routes/itensCirurgia.js'
+import tiposProcedimentoRouter from './routes/tiposProcedimento.js'
+import sessoesFisioterapiaRouter from './routes/sessoesFisioterapia.js'
 import agendamentosRouter from './routes/agendamentos.js'
+import compromissosRouter from './routes/compromissos.js'
+import relatoriosRouter from './routes/relatorios.js'
 import prontuariosRouter from './routes/prontuarios.js'
 import mensagensRouter from './routes/mensagens.js'
 import authRouter from './routes/auth.js'
@@ -25,23 +32,106 @@ import despesasRouter from './routes/despesas.js'
 import financasPessoaisRouter from './routes/financasPessoais.js'
 import financeiroResumoRouter from './routes/financeiroResumo.js'
 import reunioesRouter from './routes/reunioes.js'
+import comissoesRouter from './routes/comissoes.js'
+import perfisInstalacaoRouter from './routes/perfisInstalacao.js'
+import dashboardRouter from './routes/dashboard.js'
+import modelosReceitaRouter from './routes/modelosReceita.js'
+import notasFiscaisPacienteRouter from './routes/notasFiscaisPaciente.js'
+import contratosPacienteRouter from './routes/contratosPaciente.js'
+import fotosPacienteRouter from './routes/fotosPaciente.js'
 import { requireAuth, requireRole, requireClinica } from './auth.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 3001
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads')
+
+// Em produção, restrinja via CORS_ORIGIN (uma ou mais origens separadas por
+// vírgula, ex: "https://seu-site.netlify.app"). Sem essa env var, libera tudo
+// (comportamento atual, usado em desenvolvimento local).
+const origensPermitidas = process.env.CORS_ORIGIN?.split(',').map((o) => o.trim())
 
 const app = express()
-app.use(cors())
+app.use(cors(origensPermitidas ? { origin: origensPermitidas } : {}))
 app.use(express.json())
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
+app.use('/uploads', express.static(UPLOADS_DIR))
 
 app.get('/api/health', (req, res) => res.json({ ok: true }))
+
+// Endpoints públicos (sem login) que alimentam o manifest.webmanifest dinâmico
+// por perfil de instalação — o navegador lê isso antes de qualquer autenticação,
+// no momento em que a pessoa instala o PWA na tela inicial do celular.
+function tipoImagemPorUrl(url) {
+  const ext = url?.split('.').pop()?.toLowerCase()
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'svg') return 'image/svg+xml'
+  if (ext === 'webp') return 'image/webp'
+  return 'image/png'
+}
+
+function buscarClinicaEPerfil(clinicaSlug, perfilSlug) {
+  const clinica = db.prepare('SELECT * FROM clinicas WHERE slug = ?').get(clinicaSlug)
+  if (!clinica) return null
+  const perfil = db.prepare('SELECT * FROM perfis_instalacao WHERE clinica_id = ? AND slug = ?').get(clinica.id, perfilSlug)
+  if (!perfil) return null
+  return { clinica, perfil }
+}
+
+app.get('/api/clinica-publica/:clinicaSlug', (req, res) => {
+  const clinica = db.prepare('SELECT * FROM clinicas WHERE slug = ? AND ativo = 1').get(req.params.clinicaSlug)
+  if (!clinica) return res.status(404).json({ error: 'Clínica não encontrada' })
+  res.json({ nome: clinica.nome, logo_url: clinica.logo_url, cor_primaria: clinica.cor_primaria })
+})
+
+app.get('/api/instalar-info/:clinicaSlug/:perfilSlug', (req, res) => {
+  const encontrado = buscarClinicaEPerfil(req.params.clinicaSlug, req.params.perfilSlug)
+  if (!encontrado) return res.status(404).json({ error: 'Link de instalação não encontrado' })
+  res.json({
+    clinica_nome: encontrado.clinica.nome,
+    logo_url: encontrado.clinica.logo_url,
+    cor_primaria: encontrado.clinica.cor_primaria,
+    perfil_nome: encontrado.perfil.nome,
+  })
+})
+
+app.get('/api/manifest/:clinicaSlug/:perfilSlug', (req, res) => {
+  const { clinicaSlug, perfilSlug } = req.params
+  const encontrado = buscarClinicaEPerfil(clinicaSlug, perfilSlug)
+  if (!encontrado) return res.status(404).json({ error: 'Link de instalação não encontrado' })
+  const { clinica, perfil } = encontrado
+  const icone = clinica.logo_url || '/icons/icon-512.png'
+  const tipo = tipoImagemPorUrl(icone)
+
+  res.set('Content-Type', 'application/manifest+json')
+  res.json({
+    id: `/instalar/${clinicaSlug}/${perfilSlug}`,
+    name: `${perfil.nome} — ${clinica.nome}`,
+    short_name: perfil.nome.slice(0, 20),
+    description: `App da equipe ${clinica.nome}`,
+    start_url: `/ponto?perfil=${perfilSlug}&clinica=${clinicaSlug}`,
+    scope: '/',
+    display: 'standalone',
+    background_color: '#f8fafc',
+    theme_color: clinica.cor_primaria || '#0e6f68',
+    icons: [
+      { src: icone, sizes: '192x192', type: tipo },
+      { src: icone, sizes: '512x512', type: tipo },
+      { src: icone, sizes: '512x512', type: tipo, purpose: 'maskable' },
+    ],
+  })
+})
 
 app.use('/api/auth', authRouter)
 
 app.use('/api/pacientes', requireAuth, requireClinica, pacientesRouter)
 app.use('/api/medicos', requireAuth, requireClinica, medicosRouter)
+app.use('/api/auxiliares', requireAuth, requireClinica, auxiliaresRouter)
+app.use('/api/hospitais', requireAuth, requireClinica, hospitaisRouter)
+app.use('/api/itens-cirurgia', requireAuth, requireClinica, itensCirurgiaRouter)
+app.use('/api/tipos-procedimento', requireAuth, requireClinica, tiposProcedimentoRouter)
+app.use('/api/sessoes-fisioterapia', requireAuth, requireClinica, sessoesFisioterapiaRouter)
 app.use('/api/agendamentos', requireAuth, requireClinica, agendamentosRouter)
+app.use('/api/compromissos', requireAuth, requireClinica, compromissosRouter)
+app.use('/api/relatorios', requireAuth, requireClinica, relatoriosRouter)
 app.use('/api/prontuarios', requireAuth, requireClinica, prontuariosRouter)
 app.use('/api/mensagens', requireAuth, requireClinica, mensagensRouter)
 app.use('/api/usuarios', requireAuth, requireClinica, usuariosRouter)
@@ -55,6 +145,13 @@ app.use('/api/despesas', requireAuth, requireClinica, despesasRouter)
 app.use('/api/financas-pessoais', requireAuth, requireClinica, financasPessoaisRouter)
 app.use('/api/financeiro', requireAuth, requireClinica, financeiroResumoRouter)
 app.use('/api/reunioes', requireAuth, requireClinica, reunioesRouter)
+app.use('/api/comissoes', requireAuth, requireClinica, comissoesRouter)
+app.use('/api/perfis-instalacao', requireAuth, requireClinica, requireRole('admin'), perfisInstalacaoRouter)
+app.use('/api/dashboard', requireAuth, requireClinica, dashboardRouter)
+app.use('/api/modelos-receita', requireAuth, requireClinica, modelosReceitaRouter)
+app.use('/api/notas-fiscais-paciente', requireAuth, requireClinica, notasFiscaisPacienteRouter)
+app.use('/api/contratos-paciente', requireAuth, requireClinica, contratosPacienteRouter)
+app.use('/api/fotos-paciente', requireAuth, requireClinica, fotosPacienteRouter)
 app.use('/api/clinicas', requireAuth, requireRole('super_admin'), clinicasRouter)
 
 app.use((req, res) => {
@@ -63,7 +160,7 @@ app.use((req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  if (err.name === 'MulterError' || /imagem/.test(err.message || '')) {
+  if (err.name === 'MulterError' || /imagem|PDF/i.test(err.message || '')) {
     return res.status(400).json({ error: err.message })
   }
   console.error(err)
@@ -73,7 +170,7 @@ app.use((err, req, res, next) => {
 const httpServer = createServer(app)
 const io = new Server(httpServer, {
   path: '/socket.io',
-  cors: { origin: '*' },
+  cors: { origin: origensPermitidas ?? '*' },
 })
 
 io.on('connection', (socket) => {

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Building2, Crosshair, MapPin, Phone, Plus, Trash2, Upload } from 'lucide-react'
-import { Button, Card, Input, Label, PageHeader, Textarea } from '../../components/ui'
+import { Building2, Crosshair, Droplets, MapPin, Phone, Plus, Trash2, Upload } from 'lucide-react'
+import { Button, Card, Input, Label, PageHeader, Select, Textarea } from '../../components/ui'
 import { minhaClinicaApi } from '../../api/minhaClinica'
 import { useAuth } from '../../contexts/AuthContext'
 import { ApiError } from '../../api/client'
-import type { Clinica, Unidade } from '../../types'
+import type { Clinica, TipoMarcaDagua, Unidade } from '../../types'
 
 export default function MinhaClinica() {
   const { atualizarUsuario } = useAuth()
@@ -13,11 +13,15 @@ export default function MinhaClinica() {
   const [nome, setNome] = useState('')
   const [cnpj, setCnpj] = useState('')
   const [endereco, setEndereco] = useState('')
+  const [telefone, setTelefone] = useState('')
+  const [email, setEmail] = useState('')
   const [corPrimaria, setCorPrimaria] = useState('#0f766e')
   const [especialidadesTexto, setEspecialidadesTexto] = useState('')
   const [latitude, setLatitude] = useState<number | null>(null)
   const [longitude, setLongitude] = useState<number | null>(null)
   const [raioMetros, setRaioMetros] = useState<number | ''>('')
+  const [marcaDaguaTipo, setMarcaDaguaTipo] = useState<TipoMarcaDagua>('nenhuma')
+  const [marcaDaguaTexto, setMarcaDaguaTexto] = useState('')
   const [localizando, setLocalizando] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [enviandoLogo, setEnviandoLogo] = useState(false)
@@ -44,11 +48,15 @@ export default function MinhaClinica() {
         setNome(c.nome)
         setCnpj(c.cnpj ?? '')
         setEndereco(c.endereco ?? '')
+        setTelefone(c.telefone ?? '')
+        setEmail(c.email ?? '')
         setCorPrimaria(c.cor_primaria ?? '#0f766e')
         setEspecialidadesTexto((c.especialidades ?? []).join(', '))
         setLatitude(c.latitude ?? null)
         setLongitude(c.longitude ?? null)
         setRaioMetros(c.raio_metros ?? '')
+        setMarcaDaguaTipo(c.marca_dagua_tipo ?? 'nenhuma')
+        setMarcaDaguaTexto(c.marca_dagua_texto ?? '')
         setUnidades(u)
       })
       .catch(() => setErro('Não foi possível carregar os dados da clínica.'))
@@ -70,11 +78,15 @@ export default function MinhaClinica() {
         nome,
         cnpj: cnpj || null,
         endereco: endereco || null,
+        telefone: telefone || null,
+        email: email || null,
         cor_primaria: corPrimaria,
         especialidades,
         latitude,
         longitude,
         raio_metros: raioMetros === '' ? null : raioMetros,
+        marca_dagua_tipo: marcaDaguaTipo,
+        marca_dagua_texto: marcaDaguaTexto || null,
       })
       setClinica(atualizada)
       await atualizarUsuario()
@@ -221,6 +233,17 @@ export default function MinhaClinica() {
           <Label>Endereço (sede)</Label>
           <Input value={endereco} onChange={(e) => setEndereco(e.target.value)} />
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Telefone de contato</Label>
+            <Input value={telefone} onChange={(e) => setTelefone(e.target.value)} />
+          </div>
+          <div>
+            <Label>E-mail de contato</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+        </div>
+        <p className="text-xs text-slate-400 -mt-2">Endereço e contato aparecem no rodapé de documentos gerados, como a receita médica.</p>
         <div className="border border-slate-200 rounded-xl p-3">
           <div className="flex items-center justify-between mb-2">
             <Label>Localização para o ponto eletrônico</Label>
@@ -266,6 +289,28 @@ export default function MinhaClinica() {
         <div>
           <Label>Especialidades (separadas por vírgula)</Label>
           <Textarea rows={2} value={especialidadesTexto} onChange={(e) => setEspecialidadesTexto(e.target.value)} />
+        </div>
+
+        <div className="border border-slate-200 rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Droplets className="h-4 w-4 text-slate-500" />
+            <Label>Marca d'água nos documentos (PDFs gerados, ex: relatório cirúrgico)</Label>
+          </div>
+          <Select value={marcaDaguaTipo} onChange={(e) => setMarcaDaguaTipo(e.target.value as TipoMarcaDagua)} className="mb-2">
+            <option value="nenhuma">Nenhuma</option>
+            <option value="logo">Logo da clínica (desbotado)</option>
+            <option value="texto">Texto personalizado</option>
+          </Select>
+          {marcaDaguaTipo === 'texto' && (
+            <Input
+              placeholder="Ex: nome da clínica, USO INTERNO, CÓPIA..."
+              value={marcaDaguaTexto}
+              onChange={(e) => setMarcaDaguaTexto(e.target.value)}
+            />
+          )}
+          {marcaDaguaTipo === 'logo' && !clinica.logo_url && (
+            <p className="text-xs text-amber-600">Envie um logotipo acima (PNG ou JPG) pra marca d'água funcionar.</p>
+          )}
         </div>
 
         {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</p>}

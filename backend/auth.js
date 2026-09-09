@@ -5,7 +5,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const secretPath = path.join(__dirname, 'data', '.jwt_secret')
+const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data')
+const secretPath = path.join(dataDir, '.jwt_secret')
 
 function carregarSegredo() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET
@@ -18,11 +19,11 @@ function carregarSegredo() {
 
 const SECRET = carregarSegredo()
 
-export function assinarToken(usuario) {
+export function assinarToken(usuario, lembrar = false) {
   return jwt.sign(
     { id: usuario.id, nome: usuario.nome, role: usuario.role, clinica_id: usuario.clinica_id ?? null },
     SECRET,
-    { expiresIn: '12h' },
+    { expiresIn: lembrar ? '30d' : '12h' },
   )
 }
 

@@ -23,4 +23,9 @@ export const pagamentosApi = {
   criar: (data: PagamentoForm) => api.post<Pagamento>('/pagamentos', data),
   atualizar: (id: string, data: Partial<PagamentoForm>) => api.put<Pagamento>(`/pagamentos/${id}`, data),
   remover: (id: string) => api.del<void>(`/pagamentos/${id}`),
+  enviarComprovante: (id: string, comprovante: File) => {
+    const formData = new FormData()
+    formData.append('comprovante', comprovante)
+    return api.upload<Pagamento>(`/pagamentos/${id}/comprovante`, formData)
+  },
 }

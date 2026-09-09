@@ -1,15 +1,80 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, CheckCircle2, Clock, MapPin, RotateCcw, XCircle } from 'lucide-react'
+import { Camera, CheckCircle2, Clock, FileDown, MapPin, RotateCcw } from 'lucide-react'
 import { Badge, Button, Card, PageHeader } from '../../components/ui'
 import { pontosApi } from '../../api/pontos'
+import { useAuth } from '../../contexts/AuthContext'
 import { ApiError } from '../../api/client'
-import type { Ponto as PontoType, TipoPonto } from '../../types'
+import type { Ponto as PontoType, ResumoSemanaUsuario, TipoMarcacaoPonto, TipoPonto } from '../../types'
+
+function formatarHoras(h: number) {
+  const sinal = h < 0 ? '-' : ''
+  const abs = Math.abs(h)
+  const horas = Math.floor(abs)
+  const minutos = Math.round((abs - horas) * 60)
+  return `${sinal}${horas}h${String(minutos).padStart(2, '0')}`
+}
+
+function formatarDiaCurto(iso: string) {
+  const d = new Date(`${iso}T00:00:00`)
+  return d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })
+}
+
+function SemanaAtual() {
+  const [dados, setDados] = useState<ResumoSemanaUsuario | null>(null)
+  const [carregando, setCarregando] = useState(true)
+
+  useEffect(() => {
+    pontosApi
+      .semana()
+      .then(setDados)
+      .finally(() => setCarregando(false))
+  }, [])
+
+  if (carregando) return <p className="text-sm text-slate-400">Carregando...</p>
+  if (!dados) return null
+
+  return (
+    <Card className="p-5">
+      <p className="text-sm font-semibold text-slate-700 mb-3">Esta semana</p>
+      <div className="space-y-1.5 mb-3">
+        {dados.dias.map((d) => (
+          <div key={d.data} className="flex items-center justify-between text-sm">
+            <span className="text-slate-500 capitalize">{formatarDiaCurto(d.data)}</span>
+            <span className="font-medium text-slate-700">{formatarHoras(d.horas_trabalhadas)}</span>
+          </div>
+        ))}
+        {dados.dias.length === 0 && <p className="text-sm text-slate-400">Nenhuma marcação nesta semana ainda.</p>}
+      </div>
+      <div className="border-t border-slate-100 pt-2 flex items-center justify-between">
+        <span className="text-sm font-semibold text-slate-800">Total da semana</span>
+        <span className="font-bold text-slate-800">{formatarHoras(dados.horas_trabalhadas)}</span>
+      </div>
+      {dados.horas_esperadas != null && (
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-xs text-slate-400">Meta da semana (jornada cadastrada)</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">{formatarHoras(dados.horas_esperadas)}</span>
+            <Badge tone={dados.saldo != null && dados.saldo < 0 ? 'red' : 'green'}>
+              {dados.saldo != null && dados.saldo > 0 ? '+' : ''}
+              {dados.saldo != null ? formatarHoras(dados.saldo) : '—'}
+            </Badge>
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
 
 const ROTULOS_TIPO: Record<TipoPonto, string> = {
   entrada: 'Entrada',
   inicio_intervalo: 'Início do intervalo',
   fim_intervalo: 'Fim do intervalo',
   saida: 'Saída',
+}
+
+const ROTULOS_MARCACAO: Record<TipoMarcacaoPonto, string> = {
+  ...ROTULOS_TIPO,
+  sem_intervalo: 'Sem intervalo hoje',
 }
 
 const SEQUENCIA: Record<TipoPonto | 'nenhum', TipoPonto> = {
@@ -40,14 +105,15 @@ function obterLocalizacao(): Promise<GeolocationPosition | null> {
 }
 
 export default function Ponto() {
+  const { usuario } = useAuth()
   const [registrosHoje, setRegistrosHoje] = useState<PontoType[]>([])
   const [carregando, setCarregando] = useState(true)
-  const [tipoSelecionado, setTipoSelecionado] = useState<TipoPonto | null>(null)
+  const [tipoSelecionado, setTipoSelecionado] = useState<TipoMarcacaoPonto | null>(null)
   const [streamAtivo, setStreamAtivo] = useState(false)
   const [fotoUrl, setFotoUrl] = useState<string | null>(null)
   const [fotoBlob, setFotoBlob] = useState<Blob | null>(null)
   const [enviando, setEnviando] = useState(false)
-  const [resultado, setResultado] = useState<PontoType | null>(null)
+  const [resultado, setResultado] = useState<(Omit<PontoType, 'tipo'> & { tipo: TipoMarcacaoPonto }) | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -85,7 +151,7 @@ export default function Ponto() {
       }
       setStreamAtivo(true)
     } catch {
-      setErro('Não foi possível acessar a câmera. Você ainda pode bater o ponto sem foto.')
+      setErro('Não foi possível acessar a câmera. A foto é obrigatória para bater o ponto — permita o acesso e tente novamente.')
     }
   }
 
@@ -119,16 +185,20 @@ export default function Ponto() {
   }
 
   async function baterPonto() {
-    if (!tipoSelecionado) return
+    if (!tipoSelecionado || !fotoBlob) return
     setEnviando(true)
     setErro(null)
     setResultado(null)
     try {
       const posicao = await obterLocalizacao()
+      if (!posicao) {
+        setErro('Não foi possível obter sua localização. Ative o GPS e permita o acesso à localização para bater o ponto.')
+        return
+      }
       const registro = await pontosApi.bater({
         tipo: tipoSelecionado,
-        latitude: posicao?.coords.latitude,
-        longitude: posicao?.coords.longitude,
+        latitude: posicao.coords.latitude,
+        longitude: posicao.coords.longitude,
         foto: fotoBlob,
       })
       setResultado(registro)
@@ -142,9 +212,29 @@ export default function Ponto() {
     }
   }
 
+  const mesAtual = new Date()
+
   return (
     <div>
-      <PageHeader title="Ponto eletrônico" subtitle="Registre entrada, intervalo e saída" icon={Clock} />
+      <PageHeader
+        title="Ponto eletrônico"
+        subtitle="Registre entrada, intervalo e saída"
+        icon={Clock}
+        action={
+          usuario?.role === 'recepcao' ? (
+            <Button
+              variant="secondary"
+              onClick={() =>
+                pontosApi
+                  .abrirFolhaFrequenciaPdf(mesAtual.getMonth() + 1, mesAtual.getFullYear())
+                  .catch(() => alert('Erro ao gerar a folha de frequência.'))
+              }
+            >
+              <FileDown className="h-3.5 w-3.5" /> Minha folha de frequência (PDF)
+            </Button>
+          ) : undefined
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-5">
@@ -164,6 +254,27 @@ export default function Ponto() {
               </button>
             ))}
           </div>
+          {tipoSelecionado === 'inicio_intervalo' && (
+            <button
+              type="button"
+              onClick={() => setTipoSelecionado('sem_intervalo')}
+              className="text-xs font-medium text-brand-700 hover:text-brand-800 -mt-2 mb-4"
+            >
+              Não vou conseguir parar pro almoço hoje
+            </button>
+          )}
+          {tipoSelecionado === 'sem_intervalo' && (
+            <div className="-mt-2 mb-4 flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+              <p className="text-xs text-amber-800">Vai registrar que não fez intervalo — esse período conta como trabalhado.</p>
+              <button
+                type="button"
+                onClick={() => setTipoSelecionado('inicio_intervalo')}
+                className="text-xs font-medium text-amber-800 underline shrink-0 ml-2"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
 
           <div className="rounded-xl bg-slate-50 border border-slate-200 overflow-hidden mb-3">
             {fotoUrl ? (
@@ -197,29 +308,20 @@ export default function Ponto() {
             )}
           </div>
 
-          <Button className="w-full justify-center" onClick={baterPonto} disabled={!tipoSelecionado || enviando}>
-            {enviando ? 'Registrando...' : `Bater ponto — ${tipoSelecionado ? ROTULOS_TIPO[tipoSelecionado] : ''}`}
+          <Button className="w-full justify-center" onClick={baterPonto} disabled={!tipoSelecionado || !fotoBlob || enviando}>
+            {enviando ? 'Registrando...' : `Bater ponto — ${tipoSelecionado ? ROTULOS_MARCACAO[tipoSelecionado] : ''}`}
           </Button>
+          {!fotoBlob && <p className="text-xs text-slate-400 mt-2 text-center">Tire a foto pra poder bater o ponto.</p>}
 
           {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-3">{erro}</p>}
 
           {resultado && (
-            <div
-              className={`mt-3 rounded-lg border px-3 py-2 text-sm flex items-start gap-2 ${
-                resultado.dentro_raio ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'
-              }`}
-            >
-              {resultado.dentro_raio ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+            <div className="mt-3 rounded-lg border px-3 py-2 text-sm flex items-start gap-2 border-emerald-200 bg-emerald-50 text-emerald-800">
+              <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">{ROTULOS_TIPO[resultado.tipo]} registrada às {horario(resultado.data_hora)}</p>
-                {resultado.distancia_metros != null ? (
-                  <p>
-                    {resultado.dentro_raio
-                      ? `Dentro do raio de ${resultado.local_referencia ?? 'atendimento'} (${resultado.distancia_metros}m).`
-                      : `Fora do raio esperado (${resultado.distancia_metros}m de ${resultado.local_referencia ?? 'atendimento'}) — sinalizado para o RH.`}
-                  </p>
-                ) : (
-                  <p>Localização não verificada.</p>
+                <p className="font-medium">{ROTULOS_MARCACAO[resultado.tipo]} registrada às {horario(resultado.data_hora)}</p>
+                {resultado.distancia_metros != null && (
+                  <p>Dentro do raio de {resultado.local_referencia ?? 'atendimento'} ({resultado.distancia_metros}m).</p>
                 )}
               </div>
             </div>
@@ -254,6 +356,10 @@ export default function Ponto() {
             </div>
           )}
         </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <SemanaAtual />
       </div>
     </div>
   )

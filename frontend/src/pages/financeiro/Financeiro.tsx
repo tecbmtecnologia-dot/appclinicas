@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2, Wallet } from 'lucide-react'
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Select, Textarea } from '../../components/ui'
-import { orcamentosApi, type OrcamentoForm } from '../../api/orcamentos'
+import { orcamentosApi, type ItemOrcamentoInput, type OrcamentoForm } from '../../api/orcamentos'
 import { pagamentosApi, type PagamentoForm } from '../../api/pagamentos'
 import { despesasApi, type DespesaForm } from '../../api/despesas'
 import { financeiroApi } from '../../api/financeiro'
@@ -10,7 +10,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { ApiError } from '../../api/client'
 import type {
   DespesaClinica,
-  ItemOrcamento,
+  ItemOrcamentoCatalogo,
   Orcamento,
   Paciente,
   Pagamento,
@@ -38,14 +38,19 @@ type Aba = (typeof ABAS)[number]['id']
 export default function Financeiro() {
   const { usuario } = useAuth()
   const podeVerDespesas = usuario?.role === 'admin' || usuario?.role === 'financeiro'
-  const [aba, setAba] = useState<Aba>('resumo')
+  // Médico só entra aqui para montar orçamento (selecionar itens do catálogo) —
+  // não tem acesso ao resumo financeiro, pagamentos ou despesas da clínica.
+  const apenasOrcamentos = usuario?.role === 'medico'
+  const [aba, setAba] = useState<Aba>(apenasOrcamentos ? 'orcamentos' : 'resumo')
   const [pacientes, setPacientes] = useState<Paciente[]>([])
 
   useEffect(() => {
     pacientesApi.listar().then(setPacientes).catch(() => {})
   }, [])
 
-  const abasVisiveis = ABAS.filter((a) => a.id !== 'despesas' || podeVerDespesas)
+  const abasVisiveis = apenasOrcamentos
+    ? ABAS.filter((a) => a.id === 'orcamentos')
+    : ABAS.filter((a) => a.id !== 'despesas' || podeVerDespesas)
 
   return (
     <div>
@@ -66,7 +71,13 @@ export default function Financeiro() {
       </div>
 
       {aba === 'resumo' && <AbaResumo podeVerClinica={podeVerDespesas} />}
-      {aba === 'orcamentos' && <AbaOrcamentos pacientes={pacientes} />}
+      {aba === 'orcamentos' && (
+        <AbaOrcamentos
+          pacientes={pacientes}
+          podeGerenciarOrcamento={usuario?.role === 'admin' || usuario?.role === 'financeiro' || usuario?.role === 'medico'}
+          podeGerenciarCatalogo={usuario?.role === 'admin' || usuario?.role === 'financeiro'}
+        />
+      )}
       {aba === 'pagamentos' && <AbaPagamentos pacientes={pacientes} />}
       {aba === 'despesas' && podeVerDespesas && <AbaDespesas />}
     </div>
@@ -140,15 +151,28 @@ function AbaResumo({ podeVerClinica }: { podeVerClinica: boolean }) {
   )
 }
 
-const vazioOrcamento: OrcamentoForm = { paciente_id: '', titulo: '', itens: [{ descricao: '', valor: 0 }], observacoes: '' }
+const vazioOrcamento: OrcamentoForm = { paciente_id: '', titulo: '', itens: [], observacoes: '' }
+const vazioItemCatalogo = { nome: '', valor: 0 }
 
-function AbaOrcamentos({ pacientes }: { pacientes: Paciente[] }) {
+function AbaOrcamentos({
+  pacientes,
+  podeGerenciarOrcamento,
+  podeGerenciarCatalogo,
+}: {
+  pacientes: Paciente[]
+  podeGerenciarOrcamento: boolean
+  podeGerenciarCatalogo: boolean
+}) {
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([])
+  const [catalogoAtivo, setCatalogoAtivo] = useState<ItemOrcamentoCatalogo[]>([])
+  const [catalogoTodos, setCatalogoTodos] = useState<ItemOrcamentoCatalogo[]>([])
   const [carregando, setCarregando] = useState(true)
   const [modalAberto, setModalAberto] = useState(false)
   const [form, setForm] = useState<OrcamentoForm>(vazioOrcamento)
   const [salvando, setSalvando] = useState(false)
   const [erroForm, setErroForm] = useState<string | null>(null)
+  const [modalCatalogoAberto, setModalCatalogoAberto] = useState(false)
+  const [novoItemCatalogo, setNovoItemCatalogo] = useState(vazioItemCatalogo)
 
   function carregar() {
     setCarregando(true)
@@ -157,7 +181,12 @@ function AbaOrcamentos({ pacientes }: { pacientes: Paciente[] }) {
       .then(setOrcamentos)
       .finally(() => setCarregando(false))
   }
+  function carregarCatalogo() {
+    orcamentosApi.catalogo.listar(true).then(setCatalogoAtivo)
+    if (podeGerenciarCatalogo) orcamentosApi.catalogo.listar().then(setCatalogoTodos)
+  }
   useEffect(carregar, [])
+  useEffect(carregarCatalogo, [])
 
   function abrirNovo() {
     setForm(vazioOrcamento)
@@ -165,27 +194,32 @@ function AbaOrcamentos({ pacientes }: { pacientes: Paciente[] }) {
     setModalAberto(true)
   }
 
-  function atualizarItem(i: number, campo: keyof ItemOrcamento, valor: string) {
+  function atualizarItem(i: number, campo: keyof ItemOrcamentoInput, valor: string) {
     const itens = [...form.itens]
-    itens[i] = { ...itens[i], [campo]: campo === 'valor' ? Number(valor) : valor }
+    itens[i] = { ...itens[i], [campo]: campo === 'quantidade' ? Number(valor) : valor }
     setForm({ ...form, itens })
   }
 
   function adicionarItem() {
-    setForm({ ...form, itens: [...form.itens, { descricao: '', valor: 0 }] })
+    setForm({ ...form, itens: [...form.itens, { item_id: '', quantidade: 1 }] })
   }
 
   function removerItem(i: number) {
     setForm({ ...form, itens: form.itens.filter((_, idx) => idx !== i) })
   }
 
-  const totalForm = form.itens.reduce((s, it) => s + (Number(it.valor) || 0), 0)
+  function valorItem(item: ItemOrcamentoInput) {
+    const catalogItem = catalogoAtivo.find((c) => c.id === item.item_id)
+    return catalogItem ? catalogItem.valor * (Number(item.quantidade) || 1) : 0
+  }
+
+  const totalForm = form.itens.reduce((s, it) => s + valorItem(it), 0)
 
   async function salvar() {
     setSalvando(true)
     setErroForm(null)
     try {
-      await orcamentosApi.criar({ ...form, itens: form.itens.filter((it) => it.descricao) })
+      await orcamentosApi.criar({ ...form, itens: form.itens.filter((it) => it.item_id) })
       setModalAberto(false)
       carregar()
     } catch (err) {
@@ -206,10 +240,33 @@ function AbaOrcamentos({ pacientes }: { pacientes: Paciente[] }) {
     carregar()
   }
 
+  async function salvarItemCatalogo() {
+    if (!novoItemCatalogo.nome.trim()) return
+    await orcamentosApi.catalogo.criar(novoItemCatalogo)
+    setNovoItemCatalogo(vazioItemCatalogo)
+    carregarCatalogo()
+  }
+
+  async function alternarAtivoCatalogo(item: ItemOrcamentoCatalogo) {
+    await orcamentosApi.catalogo.atualizar(item.id, { ativo: !item.ativo })
+    carregarCatalogo()
+  }
+
+  async function removerItemCatalogo(item: ItemOrcamentoCatalogo) {
+    if (!confirm(`Remover o item "${item.nome}" do catálogo?`)) return
+    await orcamentosApi.catalogo.remover(item.id)
+    carregarCatalogo()
+  }
+
   return (
     <div>
-      <div className="flex justify-end mb-4">
-        <Button onClick={abrirNovo}>+ Novo orçamento</Button>
+      <div className="flex justify-end gap-2 mb-4">
+        {podeGerenciarCatalogo && (
+          <Button variant="secondary" onClick={() => setModalCatalogoAberto(true)}>
+            Catálogo de itens
+          </Button>
+        )}
+        {podeGerenciarOrcamento && <Button onClick={abrirNovo}>+ Novo orçamento</Button>}
       </div>
 
       {carregando ? (
@@ -224,18 +281,26 @@ function AbaOrcamentos({ pacientes }: { pacientes: Paciente[] }) {
                 <div>
                   <p className="font-semibold text-slate-800">{o.titulo}</p>
                   <p className="text-sm text-slate-500">Paciente: {o.paciente_nome}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{o.itens.length} item(ns)</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {o.itens.map((it) => it.descricao).join(', ') || `${o.itens.length} item(ns)`}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <p className="font-bold text-slate-800">{moeda(o.valor_total)}</p>
-                  <Select value={o.status} onChange={(e) => alterarStatus(o, e.target.value as Orcamento['status'])} className="!w-auto">
-                    <option value="pendente">Pendente</option>
-                    <option value="aprovado">Aprovado</option>
-                    <option value="recusado">Recusado</option>
-                  </Select>
-                  <Button variant="danger" onClick={() => remover(o)}>
-                    Remover
-                  </Button>
+                  {podeGerenciarOrcamento ? (
+                    <>
+                      <Select value={o.status} onChange={(e) => alterarStatus(o, e.target.value as Orcamento['status'])} className="!w-auto">
+                        <option value="pendente">Pendente</option>
+                        <option value="aprovado">Aprovado</option>
+                        <option value="recusado">Recusado</option>
+                      </Select>
+                      <Button variant="danger" onClick={() => remover(o)}>
+                        Remover
+                      </Button>
+                    </>
+                  ) : (
+                    <Badge>{o.status}</Badge>
+                  )}
                 </div>
               </div>
             </Card>
@@ -261,29 +326,38 @@ function AbaOrcamentos({ pacientes }: { pacientes: Paciente[] }) {
             <Input value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
           </div>
           <div>
-            <Label>Itens</Label>
+            <Label>Itens (selecione do catálogo)</Label>
+            {catalogoAtivo.length === 0 && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+                Nenhum item cadastrado no catálogo ainda. Peça para admin/financeiro cadastrar em "Catálogo de itens".
+              </p>
+            )}
             <div className="space-y-2">
               {form.itens.map((item, i) => (
-                <div key={i} className="flex gap-2">
-                  <Input
-                    placeholder="Descrição"
-                    value={item.descricao}
-                    onChange={(e) => atualizarItem(i, 'descricao', e.target.value)}
-                  />
+                <div key={i} className="flex gap-2 items-center">
+                  <Select value={item.item_id} onChange={(e) => atualizarItem(i, 'item_id', e.target.value)}>
+                    <option value="">Selecione um item...</option>
+                    {catalogoAtivo.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome} — {moeda(c.valor)}
+                      </option>
+                    ))}
+                  </Select>
                   <Input
                     type="number"
-                    placeholder="Valor"
-                    className="w-32"
-                    value={item.valor || ''}
-                    onChange={(e) => atualizarItem(i, 'valor', e.target.value)}
+                    placeholder="Qtd"
+                    className="w-20"
+                    value={item.quantidade ?? 1}
+                    onChange={(e) => atualizarItem(i, 'quantidade', e.target.value)}
                   />
+                  <p className="text-sm text-slate-600 w-24 text-right shrink-0">{moeda(valorItem(item))}</p>
                   <button onClick={() => removerItem(i)} className="text-slate-400 hover:text-red-600 shrink-0">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               ))}
             </div>
-            <Button type="button" variant="ghost" className="mt-1" onClick={adicionarItem}>
+            <Button type="button" variant="ghost" className="mt-1" onClick={adicionarItem} disabled={catalogoAtivo.length === 0}>
               <Plus className="h-3.5 w-3.5" /> Adicionar item
             </Button>
             <p className="text-sm font-semibold text-slate-700 mt-1">Total: {moeda(totalForm)}</p>
@@ -297,9 +371,56 @@ function AbaOrcamentos({ pacientes }: { pacientes: Paciente[] }) {
             <Button variant="secondary" onClick={() => setModalAberto(false)}>
               Cancelar
             </Button>
-            <Button onClick={salvar} disabled={salvando || !form.paciente_id || !form.titulo}>
+            <Button
+              onClick={salvar}
+              disabled={salvando || !form.paciente_id || !form.titulo || form.itens.filter((it) => it.item_id).length === 0}
+            >
               {salvando ? 'Salvando...' : 'Salvar'}
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={modalCatalogoAberto} onClose={() => setModalCatalogoAberto(false)} title="Catálogo de itens de orçamento">
+        <div className="space-y-4">
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <Label>Nome do item</Label>
+              <Input value={novoItemCatalogo.nome} onChange={(e) => setNovoItemCatalogo({ ...novoItemCatalogo, nome: e.target.value })} />
+            </div>
+            <div className="w-32">
+              <Label>Valor</Label>
+              <Input
+                type="number"
+                value={novoItemCatalogo.valor || ''}
+                onChange={(e) => setNovoItemCatalogo({ ...novoItemCatalogo, valor: Number(e.target.value) })}
+              />
+            </div>
+            <Button onClick={salvarItemCatalogo} disabled={!novoItemCatalogo.nome.trim()}>
+              Adicionar
+            </Button>
+          </div>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {catalogoTodos.length === 0 ? (
+              <EmptyState text="Nenhum item cadastrado ainda." />
+            ) : (
+              catalogoTodos.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{item.nome}</p>
+                    <p className="text-xs text-slate-400">{moeda(item.valor)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="secondary" onClick={() => alternarAtivoCatalogo(item)}>
+                      {item.ativo ? 'Desativar' : 'Ativar'}
+                    </Button>
+                    <Button variant="danger" onClick={() => removerItemCatalogo(item)}>
+                      Remover
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </Modal>

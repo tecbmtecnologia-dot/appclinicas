@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: app-clinicas-backend
+    runtime: node
+    rootDir: backend
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: JWT_SECRET
+        generateValue: true
+      # Depois de criar o site no Netlify, troque pela URL real (ou várias,
+      # separadas por vírgula), ex: https://app-clinicas.netlify.app
+      - key: CORS_ORIGIN
+        value: https://SEU-SITE.netlify.app
+      - key: DATA_DIR
+        value: /var/data/db
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+    disk:
+      name: dados-persistentes
+      mountPath: /var/data
+      sizeGB: 1

@@ -6,7 +6,7 @@ import type { UsuarioLogado } from '../types'
 interface AuthContextValue {
   usuario: UsuarioLogado | null
   carregando: boolean
-  entrar: (email: string, senha: string) => Promise<void>
+  entrar: (email: string, senha: string, lembrar: boolean) => Promise<void>
   sair: () => void
   atualizarUsuario: () => Promise<void>
 }
@@ -54,8 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     aplicarMarca(usuario?.clinica?.cor_primaria)
   }, [usuario?.clinica?.cor_primaria])
 
-  async function entrar(email: string, senha: string) {
-    const { token, usuario: dados } = await authApi.login(email, senha)
+  async function entrar(email: string, senha: string, lembrar: boolean) {
+    const { token, usuario: dados } = await authApi.login(email, senha, lembrar)
     setToken(token)
     setUsuario(dados)
   }

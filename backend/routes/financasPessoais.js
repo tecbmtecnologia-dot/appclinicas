@@ -1,10 +1,13 @@
 import { Router } from 'express'
 import { nanoid } from 'nanoid'
 import { db } from '../db.js'
+import { requireRole } from '../auth.js'
 
 // Dados pessoais do próprio usuário logado — nunca filtrados por clínica nem
 // visíveis a outros usuários (mesmo admin), sempre por req.usuario.id.
+// PJ (consultora, fisioterapeuta etc.) não usa este módulo.
 const router = Router()
+router.use(requireRole('admin', 'coordenador', 'medico', 'enfermagem', 'financeiro'))
 
 router.get('/resumo', (req, res) => {
   const { mes, ano } = req.query

@@ -1,15 +1,19 @@
 import { api } from './client'
-import type { Clinica, Unidade } from '../types'
+import type { Clinica, TipoMarcaDagua, Unidade } from '../types'
 
 export interface MinhaClinicaForm {
   nome: string
   cor_primaria?: string | null
   cnpj?: string | null
   endereco?: string | null
+  telefone?: string | null
+  email?: string | null
   especialidades?: string[]
   latitude?: number | null
   longitude?: number | null
   raio_metros?: number | null
+  marca_dagua_tipo?: TipoMarcaDagua
+  marca_dagua_texto?: string | null
 }
 
 export interface UnidadeForm {

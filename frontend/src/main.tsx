@@ -5,8 +5,10 @@ import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './contexts/AuthContext.tsx'
+import { capturarPerfilInstalado } from './lib/standalone.ts'
 
 registerSW({ immediate: true })
+capturarPerfilInstalado()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
