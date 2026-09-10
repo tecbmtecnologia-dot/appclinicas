@@ -65,21 +65,66 @@ function minutosDoHorario(hhmm) {
   return h * 60 + m
 }
 
-function horasEsperadasPorDia(usuario) {
-  const entrada = minutosDoHorario(usuario.horario_entrada)
-  const saida = minutosDoHorario(usuario.horario_saida)
+// Dado um horário { entrada, inicio_intervalo, fim_intervalo, saida }, quantas
+// horas isso dá num dia. Usado tanto pro horário único antigo quanto por cada
+// dia da jornada_semanal nova.
+function horasDoHorario(h) {
+  const entrada = minutosDoHorario(h?.entrada)
+  const saida = minutosDoHorario(h?.saida)
   if (entrada == null || saida == null) return null
   let minutos = saida - entrada
-  const inicioIntervalo = minutosDoHorario(usuario.horario_inicio_intervalo)
-  const fimIntervalo = minutosDoHorario(usuario.horario_fim_intervalo)
+  const inicioIntervalo = minutosDoHorario(h?.inicio_intervalo)
+  const fimIntervalo = minutosDoHorario(h?.fim_intervalo)
   if (inicioIntervalo != null && fimIntervalo != null) {
     minutos -= fimIntervalo - inicioIntervalo
   }
   return minutos / 60
 }
 
+function jornadaSemanalDoUsuario(usuario) {
+  if (!usuario.jornada_semanal) return null
+  try {
+    const obj = JSON.parse(usuario.jornada_semanal)
+    return Object.keys(obj).length > 0 ? obj : null
+  } catch {
+    return null
+  }
+}
+
+const MESMO_HORARIO = (a, b) =>
+  (a?.entrada || null) === (b?.entrada || null) &&
+  (a?.inicio_intervalo || null) === (b?.inicio_intervalo || null) &&
+  (a?.fim_intervalo || null) === (b?.fim_intervalo || null) &&
+  (a?.saida || null) === (b?.saida || null)
+
+// Jornada pra exibir/calcular meta do usuário. Se ele tem jornada_semanal (horário
+// por dia da semana) cadastrada, usa ela — soma as horas de cada dia trabalhado pra
+// horas_semana (o que corrige o cálculo antigo, que so multiplicava um horário único
+// por uma contagem de dias, sem saber quais dias eram). Se os dias tiverem todos o
+// mesmo horário, devolve também entrada/saida/horas_dia no formato antigo (compatível
+// com quem já lê esses campos). Sem jornada_semanal, cai no horário único de sempre.
 function jornadaDoUsuario(usuario) {
-  const horasDia = horasEsperadasPorDia(usuario)
+  const semanal = jornadaSemanalDoUsuario(usuario)
+  if (semanal) {
+    const dias = Object.fromEntries(
+      Object.entries(semanal).map(([dia, h]) => [dia, { ...h, horas_dia: horasDoHorario(h) || 0 }]),
+    )
+    const horasSemana = Math.round(Object.values(dias).reduce((soma, d) => soma + d.horas_dia, 0) * 100) / 100
+    const diasSemana = Object.keys(semanal)
+    const valores = Object.values(semanal)
+    const uniforme = valores.every((h) => MESMO_HORARIO(h, valores[0]))
+    if (uniforme) {
+      return { ...valores[0], horas_dia: horasDoHorario(valores[0]) || 0, horas_semana: horasSemana, dias_semana: diasSemana }
+    }
+    return { variavel: true, horas_semana: horasSemana, dias_semana: diasSemana, dias }
+  }
+
+  const horasDia = horasDoHorario({
+    entrada: usuario.horario_entrada,
+    inicio_intervalo: usuario.horario_inicio_intervalo,
+    fim_intervalo: usuario.horario_fim_intervalo,
+    saida: usuario.horario_saida,
+  })
   if (horasDia == null) return null
   return {
     entrada: usuario.horario_entrada,
@@ -87,6 +132,7 @@ function jornadaDoUsuario(usuario) {
     fim_intervalo: usuario.horario_fim_intervalo,
     saida: usuario.horario_saida,
     horas_dia: horasDia,
+    horas_semana: Math.round(horasDia * (usuario.dias_trabalho_semana || 5) * 100) / 100,
   }
 }
 
@@ -124,13 +170,12 @@ function resumoSemana(usuario, referenciaISO) {
   const horasTrabalhadas = Math.round((calcularHorasTrabalhadas(registros) / 60) * 100) / 100
   const jornada = jornadaDoUsuario(usuario)
   // Meta semanal: usa o valor direto cadastrado (carga_horaria_semanal_horas) quando existir;
-  // senão cai pro cálculo a partir da jornada (horário de entrada/intervalo/saída × dias da semana).
+  // senão usa a soma da jornada (jornada_semanal por dia, quando cadastrada — senão o
+  // horário único × dias da semana, calculado em jornadaDoUsuario).
   const horasEsperadas =
     usuario.carga_horaria_semanal_horas != null && usuario.carga_horaria_semanal_horas > 0
       ? usuario.carga_horaria_semanal_horas
-      : jornada
-        ? Math.round(jornada.horas_dia * (usuario.dias_trabalho_semana || 5) * 100) / 100
-        : null
+      : (jornada?.horas_semana ?? null)
 
   return {
     inicio,

@@ -175,12 +175,18 @@ export default function RelatorioPonto() {
                       </button>
                     </td>
                     <td className="px-4 py-2.5 text-slate-500 text-xs">
-                      {r.jornada ? (
+                      {r.jornada?.variavel ? (
+                        <>
+                          Jornada variável ({r.jornada.dias_semana?.length ?? 0} dias)
+                          <br />
+                          {formatarHoras(r.jornada.horas_semana ?? 0)}/semana
+                        </>
+                      ) : r.jornada ? (
                         <>
                           {r.jornada.entrada}–{r.jornada.saida}
                           {r.jornada.inicio_intervalo && r.jornada.fim_intervalo ? ` (int. ${r.jornada.inicio_intervalo}–${r.jornada.fim_intervalo})` : ''}
                           <br />
-                          {formatarHoras(r.jornada.horas_dia)}/dia
+                          {formatarHoras(r.jornada.horas_dia ?? 0)}/dia
                         </>
                       ) : (
                         '—'

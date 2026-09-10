@@ -500,6 +500,7 @@ migrarColunas('usuarios', [
   ['foto_url', 'TEXT'],
   ['carga_horaria_semanal_horas', 'REAL'],
   ['cargo', 'TEXT'],
+  ['jornada_semanal', 'TEXT'],
 ])
 
 migrarColunas('pontos', [

@@ -173,9 +173,20 @@ export interface Usuario {
   horario_saida?: string | null
   dias_trabalho_semana?: number
   carga_horaria_semanal_horas?: number | null
+  jornada_semanal?: Record<string, HorarioDia> | null
   foto_url?: string | null
   ativo: number
   created_at: string
+}
+
+// Código do dia da semana usado em jornada_semanal (mesmo formato no back e no front).
+export type DiaSemanaCodigo = 'dom' | 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab'
+
+export interface HorarioDia {
+  entrada: string | null
+  inicio_intervalo?: string | null
+  fim_intervalo?: string | null
+  saida: string | null
 }
 
 export interface ClinicaResumo {
@@ -241,12 +252,14 @@ export interface Ponto {
   created_at: string
 }
 
-export interface Jornada {
-  entrada: string | null
-  inicio_intervalo?: string | null
-  fim_intervalo?: string | null
-  saida: string | null
-  horas_dia: number
+export interface Jornada extends Partial<HorarioDia> {
+  horas_dia?: number
+  horas_semana?: number
+  dias_semana?: DiaSemanaCodigo[]
+  // Quando os dias trabalhados têm horários diferentes entre si, não dá pra
+  // resumir num entrada/saída único — variavel=true e `dias` traz o detalhe.
+  variavel?: boolean
+  dias?: Record<string, HorarioDia & { horas_dia: number }>
 }
 
 export interface DiaSemanaPonto {

@@ -10,14 +10,38 @@ const ROLES = ['admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'fina
 const GESTAO = requireRole('admin')
 const LEITURA = requireRole('admin', 'coordenador')
 const HORA_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/
+const DIAS_SEMANA_VALIDOS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab']
 
 function horaValida(v) {
   return v === undefined || v === null || v === '' || HORA_REGEX.test(v)
 }
 
+// Jornada por dia da semana: { seg: { entrada, inicio_intervalo, fim_intervalo, saida }, ... }
+// — só os dias em que a pessoa trabalha aparecem como chave. Substitui o horário
+// único antigo (horario_entrada/saida), que valia igual pra todo dia trabalhado.
+function jornadaSemanalValida(obj) {
+  if (obj === undefined || obj === null) return true
+  if (typeof obj !== 'object' || Array.isArray(obj)) return false
+  return Object.entries(obj).every(([dia, h]) => {
+    if (!DIAS_SEMANA_VALIDOS.includes(dia)) return false
+    if (!h || typeof h !== 'object') return false
+    return [h.entrada, h.inicio_intervalo, h.fim_intervalo, h.saida].every(horaValida)
+  })
+}
+
+function jornadaSemanalParaTexto(obj) {
+  if (!obj || Object.keys(obj).length === 0) return null
+  return JSON.stringify(obj)
+}
+
+function comJornadaSemanal(usuario) {
+  if (!usuario) return usuario
+  return { ...usuario, jornada_semanal: usuario.jornada_semanal ? JSON.parse(usuario.jornada_semanal) : null }
+}
+
 function semSenha(usuario) {
   if (!usuario) return usuario
-  const { senha_hash, ...resto } = usuario
+  const { senha_hash, ...resto } = comJornadaSemanal(usuario)
   return resto
 }
 
@@ -51,12 +75,16 @@ router.post('/', GESTAO, (req, res) => {
     horario_fim_intervalo,
     horario_saida,
     dias_trabalho_semana,
+    jornada_semanal,
   } = req.body
   if (!nome || !email || !senha) return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios' })
   if (senha.length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres' })
   if (!ROLES.includes(role)) return res.status(400).json({ error: 'Perfil inválido' })
   if (![horario_entrada, horario_inicio_intervalo, horario_fim_intervalo, horario_saida].every(horaValida)) {
     return res.status(400).json({ error: 'Horário inválido — use o formato HH:MM' })
+  }
+  if (!jornadaSemanalValida(jornada_semanal)) {
+    return res.status(400).json({ error: 'Jornada semanal inválida' })
   }
 
   const emailNormalizado = String(email).toLowerCase()
@@ -76,8 +104,8 @@ router.post('/', GESTAO, (req, res) => {
   const hash = bcrypt.hashSync(senha, 10)
   db.prepare(
     `INSERT INTO usuarios (id, clinica_id, nome, email, senha_hash, role, cargo, medico_id, unidade_id, carga_horaria_mensal_horas,
-       carga_horaria_semanal_horas, horario_entrada, horario_inicio_intervalo, horario_fim_intervalo, horario_saida, dias_trabalho_semana)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       carga_horaria_semanal_horas, horario_entrada, horario_inicio_intervalo, horario_fim_intervalo, horario_saida, dias_trabalho_semana, jornada_semanal)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     req.usuario.clinica_id,
@@ -95,6 +123,7 @@ router.post('/', GESTAO, (req, res) => {
     horario_fim_intervalo || null,
     horario_saida || null,
     dias_trabalho_semana || 5,
+    jornadaSemanalParaTexto(jornada_semanal),
   )
 
   res.status(201).json(semSenha(db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id)))
@@ -120,11 +149,15 @@ router.put('/:id', GESTAO, (req, res) => {
     horario_fim_intervalo,
     horario_saida,
     dias_trabalho_semana,
+    jornada_semanal,
   } = req.body
   if (role && !ROLES.includes(role)) return res.status(400).json({ error: 'Perfil inválido' })
   if (senha && senha.length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres' })
   if (![horario_entrada, horario_inicio_intervalo, horario_fim_intervalo, horario_saida].every(horaValida)) {
     return res.status(400).json({ error: 'Horário inválido — use o formato HH:MM' })
+  }
+  if (!jornadaSemanalValida(jornada_semanal)) {
+    return res.status(400).json({ error: 'Jornada semanal inválida' })
   }
 
   const emailNormalizado = email ? String(email).toLowerCase() : existente.email
@@ -173,12 +206,13 @@ router.put('/:id', GESTAO, (req, res) => {
     horario_fim_intervalo: horario_fim_intervalo !== undefined ? horario_fim_intervalo || null : existente.horario_fim_intervalo,
     horario_saida: horario_saida !== undefined ? horario_saida || null : existente.horario_saida,
     dias_trabalho_semana: dias_trabalho_semana ?? existente.dias_trabalho_semana,
+    jornada_semanal: jornada_semanal !== undefined ? jornadaSemanalParaTexto(jornada_semanal) : existente.jornada_semanal,
   }
 
   db.prepare(
     `UPDATE usuarios SET nome=?, email=?, senha_hash=?, role=?, cargo=?, medico_id=?, unidade_id=?, carga_horaria_mensal_horas=?,
        carga_horaria_semanal_horas=?, ativo=?, horario_entrada=?, horario_inicio_intervalo=?, horario_fim_intervalo=?,
-       horario_saida=?, dias_trabalho_semana=? WHERE id=?`,
+       horario_saida=?, dias_trabalho_semana=?, jornada_semanal=? WHERE id=?`,
   ).run(
     merged.nome,
     merged.email,
@@ -195,6 +229,7 @@ router.put('/:id', GESTAO, (req, res) => {
     merged.horario_fim_intervalo,
     merged.horario_saida,
     merged.dias_trabalho_semana,
+    merged.jornada_semanal,
     req.params.id,
   )
 

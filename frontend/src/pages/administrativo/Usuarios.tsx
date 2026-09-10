@@ -7,7 +7,7 @@ import { medicosApi } from '../../api/medicos'
 import { minhaClinicaApi } from '../../api/minhaClinica'
 import { useAuth } from '../../contexts/AuthContext'
 import { ApiError } from '../../api/client'
-import type { Medico, Unidade, Usuario } from '../../types'
+import type { DiaSemanaCodigo, HorarioDia, Medico, Unidade, Usuario } from '../../types'
 
 const vazio: UsuarioForm = {
   nome: '',
@@ -19,12 +19,18 @@ const vazio: UsuarioForm = {
   unidade_id: '',
   carga_horaria_mensal_horas: 160,
   carga_horaria_semanal_horas: null,
-  horario_entrada: '',
-  horario_inicio_intervalo: '',
-  horario_fim_intervalo: '',
-  horario_saida: '',
-  dias_trabalho_semana: 5,
+  jornada_semanal: {},
 }
+
+const DIAS_SEMANA: { codigo: DiaSemanaCodigo; rotulo: string }[] = [
+  { codigo: 'seg', rotulo: 'Segunda' },
+  { codigo: 'ter', rotulo: 'Terça' },
+  { codigo: 'qua', rotulo: 'Quarta' },
+  { codigo: 'qui', rotulo: 'Quinta' },
+  { codigo: 'sex', rotulo: 'Sexta' },
+  { codigo: 'sab', rotulo: 'Sábado' },
+  { codigo: 'dom', rotulo: 'Domingo' },
+]
 
 function minutosDoHorario(hhmm?: string | null) {
   if (!hhmm) return null
@@ -33,15 +39,21 @@ function minutosDoHorario(hhmm?: string | null) {
   return h * 60 + m
 }
 
-function horasPorDia(form: UsuarioForm) {
-  const entrada = minutosDoHorario(form.horario_entrada)
-  const saida = minutosDoHorario(form.horario_saida)
+function horasDoHorario(h: Partial<HorarioDia>) {
+  const entrada = minutosDoHorario(h.entrada)
+  const saida = minutosDoHorario(h.saida)
   if (entrada == null || saida == null) return null
   let minutos = saida - entrada
-  const inicioIntervalo = minutosDoHorario(form.horario_inicio_intervalo)
-  const fimIntervalo = minutosDoHorario(form.horario_fim_intervalo)
+  const inicioIntervalo = minutosDoHorario(h.inicio_intervalo)
+  const fimIntervalo = minutosDoHorario(h.fim_intervalo)
   if (inicioIntervalo != null && fimIntervalo != null) minutos -= fimIntervalo - inicioIntervalo
   return minutos / 60
+}
+
+function horasSemanaForm(form: UsuarioForm) {
+  const dias = Object.values(form.jornada_semanal ?? {})
+  if (dias.length === 0) return null
+  return dias.reduce((soma, h) => soma + (horasDoHorario(h) ?? 0), 0)
 }
 
 function formatarHoras(h: number) {
@@ -94,6 +106,37 @@ export default function Usuarios() {
 
   useEffect(carregar, [])
 
+  function alternarDia(codigo: DiaSemanaCodigo) {
+    setForm((f) => {
+      const atual = { ...(f.jornada_semanal ?? {}) }
+      if (atual[codigo]) {
+        delete atual[codigo]
+      } else {
+        atual[codigo] = { entrada: '', inicio_intervalo: '', fim_intervalo: '', saida: '' }
+      }
+      return { ...f, jornada_semanal: atual }
+    })
+  }
+
+  function atualizarHorarioDia(codigo: DiaSemanaCodigo, campo: keyof HorarioDia, valor: string) {
+    setForm((f) => {
+      const atual: HorarioDia = f.jornada_semanal?.[codigo] ?? { entrada: '', inicio_intervalo: '', fim_intervalo: '', saida: '' }
+      return {
+        ...f,
+        jornada_semanal: { ...(f.jornada_semanal ?? {}), [codigo]: { ...atual, [campo]: valor } },
+      }
+    })
+  }
+
+  function copiarHorarioParaTodosOsDias() {
+    setForm((f) => {
+      const dias = Object.keys(f.jornada_semanal ?? {})
+      if (dias.length === 0) return f
+      const base = f.jornada_semanal![dias[0]]
+      return { ...f, jornada_semanal: Object.fromEntries(dias.map((d) => [d, { ...base }])) }
+    })
+  }
+
   function abrirNovo() {
     setEditando(null)
     setForm(vazio)
@@ -114,11 +157,7 @@ export default function Usuarios() {
       unidade_id: u.unidade_id ?? '',
       carga_horaria_mensal_horas: u.carga_horaria_mensal_horas ?? 160,
       carga_horaria_semanal_horas: u.carga_horaria_semanal_horas ?? null,
-      horario_entrada: u.horario_entrada ?? '',
-      horario_inicio_intervalo: u.horario_inicio_intervalo ?? '',
-      horario_fim_intervalo: u.horario_fim_intervalo ?? '',
-      horario_saida: u.horario_saida ?? '',
-      dias_trabalho_semana: u.dias_trabalho_semana ?? 5,
+      jornada_semanal: u.jornada_semanal ?? {},
       ativo: !!u.ativo,
     })
     setFotoBlob(null)
@@ -333,52 +372,66 @@ export default function Usuarios() {
           </div>
 
           <div>
-            <Label>Jornada de trabalho (opcional — usada pra calcular o saldo semanal no ponto)</Label>
-            <div className="grid grid-cols-4 gap-2">
-              <div>
-                <Label>Entrada</Label>
-                <Input type="time" value={form.horario_entrada ?? ''} onChange={(e) => setForm({ ...form, horario_entrada: e.target.value })} />
-              </div>
-              <div>
-                <Label>Saída almoço</Label>
-                <Input
-                  type="time"
-                  value={form.horario_inicio_intervalo ?? ''}
-                  onChange={(e) => setForm({ ...form, horario_inicio_intervalo: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Volta almoço</Label>
-                <Input
-                  type="time"
-                  value={form.horario_fim_intervalo ?? ''}
-                  onChange={(e) => setForm({ ...form, horario_fim_intervalo: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Saída</Label>
-                <Input type="time" value={form.horario_saida ?? ''} onChange={(e) => setForm({ ...form, horario_saida: e.target.value })} />
-              </div>
+            <div className="flex items-center justify-between">
+              <Label>Jornada de trabalho (marque os dias e o horário de cada um)</Label>
+              {Object.keys(form.jornada_semanal ?? {}).length > 1 && (
+                <button type="button" onClick={copiarHorarioParaTodosOsDias} className="text-xs text-brand-700 hover:underline shrink-0">
+                  Copiar 1º horário pros demais dias marcados
+                </button>
+              )}
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 items-end">
-            <div>
-              <Label>Dias de trabalho por semana</Label>
-              <Input
-                type="number"
-                min={1}
-                max={7}
-                value={form.dias_trabalho_semana ?? 5}
-                onChange={(e) => setForm({ ...form, dias_trabalho_semana: Number(e.target.value) })}
-              />
+            <div className="space-y-2">
+              {DIAS_SEMANA.map(({ codigo, rotulo }) => {
+                const horario = form.jornada_semanal?.[codigo]
+                return (
+                  <div key={codigo} className="border border-slate-200 rounded-lg p-2.5">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none">
+                      <input type="checkbox" checked={!!horario} onChange={() => alternarDia(codigo)} />
+                      {rotulo}
+                    </label>
+                    {horario && (
+                      <div className="grid grid-cols-4 gap-2 mt-2">
+                        <div>
+                          <Label>Entrada</Label>
+                          <Input
+                            type="time"
+                            value={horario.entrada ?? ''}
+                            onChange={(e) => atualizarHorarioDia(codigo, 'entrada', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Saída almoço</Label>
+                          <Input
+                            type="time"
+                            value={horario.inicio_intervalo ?? ''}
+                            onChange={(e) => atualizarHorarioDia(codigo, 'inicio_intervalo', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Volta almoço</Label>
+                          <Input
+                            type="time"
+                            value={horario.fim_intervalo ?? ''}
+                            onChange={(e) => atualizarHorarioDia(codigo, 'fim_intervalo', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Saída</Label>
+                          <Input
+                            type="time"
+                            value={horario.saida ?? ''}
+                            onChange={(e) => atualizarHorarioDia(codigo, 'saida', e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
-            {horasPorDia(form) != null && (
-              <p className="text-sm text-slate-600 pb-2">
-                <span className="font-semibold text-slate-800">{formatarHoras(horasPorDia(form)!)}/dia</span>
-                {' · '}
-                <span className="font-semibold text-slate-800">
-                  {formatarHoras(horasPorDia(form)! * (form.dias_trabalho_semana ?? 5))}/semana
-                </span>
+            {horasSemanaForm(form) != null && (
+              <p className="text-sm text-slate-600 mt-2">
+                <span className="font-semibold text-slate-800">{formatarHoras(horasSemanaForm(form)!)}/semana</span> no total
               </p>
             )}
           </div>
