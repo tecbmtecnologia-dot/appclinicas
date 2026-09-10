@@ -164,6 +164,8 @@ export default function Pacientes() {
         ...form,
         peso_kg: form.peso_kg ? Number(form.peso_kg) : null,
         altura_cm: form.altura_cm ? Number(form.altura_cm) : null,
+        estado_civil: form.estado_civil || null,
+        cor_raca: form.cor_raca || null,
       }
       let paciente: Paciente
       if (editando) {
