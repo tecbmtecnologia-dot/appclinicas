@@ -75,7 +75,10 @@ const navOperacional: { to: string; label: string; end?: boolean; roles?: Role[]
   { to: '/configuracoes/tipos-procedimento', label: 'Tipos de procedimento', roles: ['admin'], icon: ClipboardPlus },
 ]
 
-const navPlataforma = [{ to: '/plataforma/clinicas', label: 'Clínicas', end: true, icon: Building2 }]
+const navPlataforma = [
+  { to: '/plataforma/clinicas', label: 'Clínicas', end: true, icon: Building2 },
+  { to: '/plataforma/perfil', label: 'Meu perfil', end: true, icon: UserCog },
+]
 
 const rotulosRole: Record<Role, string> = {
   super_admin: 'Administrador da plataforma',

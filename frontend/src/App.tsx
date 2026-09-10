@@ -13,6 +13,7 @@ import Hospitais from './pages/administrativo/Hospitais'
 import Usuarios from './pages/administrativo/Usuarios'
 import Telemedicina from './pages/telemedicina/Telemedicina'
 import Clinicas from './pages/plataforma/Clinicas'
+import MeuPerfil from './pages/plataforma/MeuPerfil'
 import MinhaClinica from './pages/configuracoes/MinhaClinica'
 import Ponto from './pages/ponto/Ponto'
 import RelatorioPonto from './pages/ponto/RelatorioPonto'
@@ -56,6 +57,7 @@ function App() {
           <Route path="/" element={<Inicio />} />
           <Route element={<RequireRole roles={['super_admin']} />}>
             <Route path="/plataforma/clinicas" element={<Clinicas />} />
+            <Route path="/plataforma/perfil" element={<MeuPerfil />} />
           </Route>
           <Route
             element={
