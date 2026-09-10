@@ -3,20 +3,18 @@
   command = "npm install && npm run build"
   publish = "dist"
 
-# Troque SEU-BACKEND pela URL real do serviço no Render assim que ele existir
-# (ex: app-clinicas-backend.onrender.com). Essas duas regras fazem o Netlify
-# repassar as chamadas de API e as imagens de upload para o backend, como se
-# fossem da mesma origem (evita configurar CORS extra e não expõe a URL do
-# Render diretamente no código do frontend).
+# Repassa as chamadas de API e as imagens de upload para o backend no Render,
+# como se fossem da mesma origem (evita configurar CORS extra e não expõe a
+# URL do Render diretamente no código do frontend).
 [[redirects]]
   from = "/api/*"
-  to = "https://SEU-BACKEND.onrender.com/api/:splat"
+  to = "https://app-clinicas-backend.onrender.com/api/:splat"
   status = 200
   force = true
 
 [[redirects]]
   from = "/uploads/*"
-  to = "https://SEU-BACKEND.onrender.com/uploads/:splat"
+  to = "https://app-clinicas-backend.onrender.com/uploads/:splat"
   status = 200
   force = true
 
