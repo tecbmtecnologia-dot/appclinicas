@@ -10,10 +10,19 @@ const ROLES = ['admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'fina
 const GESTAO = requireRole('admin')
 const LEITURA = requireRole('admin', 'coordenador')
 const HORA_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/
+const DATA_REGEX = /^\d{4}-\d{2}-\d{2}$/
 const DIAS_SEMANA_VALIDOS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab']
 
 function horaValida(v) {
   return v === undefined || v === null || v === '' || HORA_REGEX.test(v)
+}
+
+function dataValida(v) {
+  return v === undefined || v === null || v === '' || DATA_REGEX.test(v)
+}
+
+function diaFechamentoValido(v) {
+  return v === undefined || v === null || v === '' || (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 28)
 }
 
 // Jornada por dia da semana: { seg: { entrada, inicio_intervalo, fim_intervalo, saida }, ... }
@@ -76,6 +85,8 @@ router.post('/', GESTAO, (req, res) => {
     horario_saida,
     dias_trabalho_semana,
     jornada_semanal,
+    dia_fechamento_folha,
+    data_admissao,
   } = req.body
   if (!nome || !email || !senha) return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios' })
   if (senha.length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres' })
@@ -85,6 +96,12 @@ router.post('/', GESTAO, (req, res) => {
   }
   if (!jornadaSemanalValida(jornada_semanal)) {
     return res.status(400).json({ error: 'Jornada semanal inválida' })
+  }
+  if (!diaFechamentoValido(dia_fechamento_folha)) {
+    return res.status(400).json({ error: 'Dia de fechamento inválido — use um número de 1 a 28' })
+  }
+  if (!dataValida(data_admissao)) {
+    return res.status(400).json({ error: 'Data de admissão inválida' })
   }
 
   const emailNormalizado = String(email).toLowerCase()
@@ -104,8 +121,9 @@ router.post('/', GESTAO, (req, res) => {
   const hash = bcrypt.hashSync(senha, 10)
   db.prepare(
     `INSERT INTO usuarios (id, clinica_id, nome, email, senha_hash, role, cargo, medico_id, unidade_id, carga_horaria_mensal_horas,
-       carga_horaria_semanal_horas, horario_entrada, horario_inicio_intervalo, horario_fim_intervalo, horario_saida, dias_trabalho_semana, jornada_semanal)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       carga_horaria_semanal_horas, horario_entrada, horario_inicio_intervalo, horario_fim_intervalo, horario_saida, dias_trabalho_semana,
+       jornada_semanal, dia_fechamento_folha, data_admissao)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     req.usuario.clinica_id,
@@ -124,6 +142,8 @@ router.post('/', GESTAO, (req, res) => {
     horario_saida || null,
     dias_trabalho_semana || 5,
     jornadaSemanalParaTexto(jornada_semanal),
+    dia_fechamento_folha || 20,
+    data_admissao || null,
   )
 
   res.status(201).json(semSenha(db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id)))
@@ -150,6 +170,8 @@ router.put('/:id', GESTAO, (req, res) => {
     horario_saida,
     dias_trabalho_semana,
     jornada_semanal,
+    dia_fechamento_folha,
+    data_admissao,
   } = req.body
   if (role && !ROLES.includes(role)) return res.status(400).json({ error: 'Perfil inválido' })
   if (senha && senha.length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres' })
@@ -158,6 +180,12 @@ router.put('/:id', GESTAO, (req, res) => {
   }
   if (!jornadaSemanalValida(jornada_semanal)) {
     return res.status(400).json({ error: 'Jornada semanal inválida' })
+  }
+  if (!diaFechamentoValido(dia_fechamento_folha)) {
+    return res.status(400).json({ error: 'Dia de fechamento inválido — use um número de 1 a 28' })
+  }
+  if (!dataValida(data_admissao)) {
+    return res.status(400).json({ error: 'Data de admissão inválida' })
   }
 
   const emailNormalizado = email ? String(email).toLowerCase() : existente.email
@@ -207,12 +235,14 @@ router.put('/:id', GESTAO, (req, res) => {
     horario_saida: horario_saida !== undefined ? horario_saida || null : existente.horario_saida,
     dias_trabalho_semana: dias_trabalho_semana ?? existente.dias_trabalho_semana,
     jornada_semanal: jornada_semanal !== undefined ? jornadaSemanalParaTexto(jornada_semanal) : existente.jornada_semanal,
+    dia_fechamento_folha: dia_fechamento_folha || existente.dia_fechamento_folha,
+    data_admissao: data_admissao !== undefined ? data_admissao || null : existente.data_admissao,
   }
 
   db.prepare(
     `UPDATE usuarios SET nome=?, email=?, senha_hash=?, role=?, cargo=?, medico_id=?, unidade_id=?, carga_horaria_mensal_horas=?,
        carga_horaria_semanal_horas=?, ativo=?, horario_entrada=?, horario_inicio_intervalo=?, horario_fim_intervalo=?,
-       horario_saida=?, dias_trabalho_semana=?, jornada_semanal=? WHERE id=?`,
+       horario_saida=?, dias_trabalho_semana=?, jornada_semanal=?, dia_fechamento_folha=?, data_admissao=? WHERE id=?`,
   ).run(
     merged.nome,
     merged.email,
@@ -230,6 +260,8 @@ router.put('/:id', GESTAO, (req, res) => {
     merged.horario_saida,
     merged.dias_trabalho_semana,
     merged.jornada_semanal,
+    merged.dia_fechamento_folha,
+    merged.data_admissao,
     req.params.id,
   )
 

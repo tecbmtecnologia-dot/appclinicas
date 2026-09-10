@@ -174,6 +174,8 @@ export interface Usuario {
   dias_trabalho_semana?: number
   carga_horaria_semanal_horas?: number | null
   jornada_semanal?: Record<string, HorarioDia> | null
+  dia_fechamento_folha?: number
+  data_admissao?: string | null
   foto_url?: string | null
   ativo: number
   created_at: string
@@ -282,14 +284,25 @@ export interface ResumoSemanaUsuario extends ResumoSemana {
   usuario_nome: string
 }
 
+export interface SaldoAcumulado {
+  // Desde quando o acúmulo conta (admissão, ou data de criação da conta se não tiver admissão cadastrada).
+  desde: string
+  periodos: number
+  meta_total: number
+  horas_trabalhadas: number
+  saldo: number
+}
+
 export interface ResumoPontoUsuario {
   usuario_id: string
   usuario_nome: string
   foto_url?: string | null
   role: Role
+  periodo?: { inicio: string; fim: string }
   meta_horas: number
   horas_trabalhadas: number
   saldo_horas: number
+  saldo_acumulado: SaldoAcumulado | null
   total_registros: number
   jornada: Jornada | null
   semana_atual: ResumoSemana

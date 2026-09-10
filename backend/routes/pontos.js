@@ -136,6 +136,63 @@ function jornadaDoUsuario(usuario) {
   }
 }
 
+// Ciclo de fechamento da folha (ex: fechamento=20 -> período vai do dia 21 do
+// mês anterior ao dia 20 do mês de referência), configurável por usuário —
+// substitui o mês-calendário puro pra bater com a folha de pagamento real.
+function limitesPeriodo(ano, mes, diaFechamento) {
+  let mesAnterior = mes - 1
+  let anoAnterior = ano
+  if (mesAnterior === 0) {
+    mesAnterior = 12
+    anoAnterior -= 1
+  }
+  const inicio = `${anoAnterior}-${String(mesAnterior).padStart(2, '0')}-${String(diaFechamento + 1).padStart(2, '0')}`
+  const fim = `${ano}-${String(mes).padStart(2, '0')}-${String(diaFechamento).padStart(2, '0')}`
+  return { inicio, fim }
+}
+
+// Em qual período (ano/mês de referência, ou seja, o mês em que o período
+// fecha) uma data cai, dado o dia de fechamento.
+function periodoDe(dataISO, diaFechamento) {
+  const [ano, mes, dia] = dataISO.split('-').map(Number)
+  if (dia > diaFechamento) {
+    return mes === 12 ? { ano: ano + 1, mes: 1 } : { ano, mes: mes + 1 }
+  }
+  return { ano, mes }
+}
+
+// Saldo de banco de horas acumulado desde a admissão até o fim do período de
+// referência: soma tudo que foi trabalhado menos a meta de cada período já
+// iniciado (mesmo o atual, ainda em andamento) — carrega positivo/negativo
+// dos meses anteriores pro atual, em vez de zerar todo mês.
+function saldoAcumulado(usuario, anoRef, mesRef) {
+  const diaFechamento = usuario.dia_fechamento_folha || 20
+  const admissaoISO = usuario.data_admissao || usuario.created_at.slice(0, 10)
+  const periodoAdmissao = periodoDe(admissaoISO, diaFechamento)
+
+  const nPeriodos = (anoRef - periodoAdmissao.ano) * 12 + (mesRef - periodoAdmissao.mes) + 1
+  if (nPeriodos <= 0) return null
+
+  const { inicio: inicioAdmissao } = limitesPeriodo(periodoAdmissao.ano, periodoAdmissao.mes, diaFechamento)
+  const { fim } = limitesPeriodo(anoRef, mesRef, diaFechamento)
+  const inicio = admissaoISO > inicioAdmissao ? admissaoISO : inicioAdmissao
+
+  const registros = db
+    .prepare(`SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ?`)
+    .all(usuario.id, inicio, fim)
+
+  const horasTrabalhadas = calcularHorasTrabalhadas(registros) / 60
+  const metaTotal = nPeriodos * (usuario.carga_horaria_mensal_horas || 0)
+
+  return {
+    desde: admissaoISO,
+    periodos: nPeriodos,
+    meta_total: Math.round(metaTotal * 100) / 100,
+    horas_trabalhadas: Math.round(horasTrabalhadas * 100) / 100,
+    saldo: Math.round((horasTrabalhadas - metaTotal) * 100) / 100,
+  }
+}
+
 // Semana de segunda a domingo que contém a data de referência (padrão: hoje).
 function limitesSemana(referenciaISO) {
   const ref = new Date(`${referenciaISO}T00:00:00`)
@@ -208,17 +265,22 @@ router.get('/', PODE_BATER_PONTO, (req, res) => {
 })
 
 router.get('/resumo', GESTAO_RH, (req, res) => {
-  const { mes, ano } = req.query
-  const referencia = mes && ano ? `${ano}-${String(mes).padStart(2, '0')}` : new Date().toISOString().slice(0, 7)
+  const hoje = new Date()
+  const mesRef = req.query.mes ? Number(req.query.mes) : hoje.getMonth() + 1
+  const anoRef = req.query.ano ? Number(req.query.ano) : hoje.getFullYear()
+  const referencia = `${anoRef}-${String(mesRef).padStart(2, '0')}`
 
   const usuarios = db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1').all(req.usuario.clinica_id)
 
   const resumo = usuarios.map((u) => {
+    // Período de referência = ciclo de fechamento do próprio usuário (ex: 21 do
+    // mês anterior a 20 do mês de referência), não o mês-calendário.
+    const { inicio, fim } = limitesPeriodo(anoRef, mesRef, u.dia_fechamento_folha || 20)
     const registros = db
       .prepare(
-        `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 7) = ? ORDER BY data_hora ASC`,
+        `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
       )
-      .all(u.id, referencia)
+      .all(u.id, inicio, fim)
     const minutos = calcularHorasTrabalhadas(registros)
     const horasTrabalhadas = minutos / 60
     const saldoHoras = horasTrabalhadas - u.carga_horaria_mensal_horas
@@ -227,9 +289,11 @@ router.get('/resumo', GESTAO_RH, (req, res) => {
       usuario_nome: u.nome,
       foto_url: u.foto_url,
       role: u.role,
+      periodo: { inicio, fim },
       meta_horas: u.carga_horaria_mensal_horas,
       horas_trabalhadas: Math.round(horasTrabalhadas * 100) / 100,
       saldo_horas: Math.round(saldoHoras * 100) / 100,
+      saldo_acumulado: saldoAcumulado(u, anoRef, mesRef),
       total_registros: registros.length,
       jornada: jornadaDoUsuario(u),
       semana_atual: resumoSemana(u),
@@ -264,14 +328,11 @@ router.get('/folha-frequencia.pdf', requireRole('admin', 'coordenador', 'finance
   const mesRef = req.query.mes ? Number(req.query.mes) : hoje.getMonth() + 1
   const anoRef = req.query.ano ? Number(req.query.ano) : hoje.getFullYear()
 
-  let mesAnterior = mesRef - 1
-  let anoAnterior = anoRef
-  if (mesAnterior === 0) {
-    mesAnterior = 12
-    anoAnterior -= 1
-  }
-  const inicio = `${anoAnterior}-${String(mesAnterior).padStart(2, '0')}-21`
-  const fim = `${anoRef}-${String(mesRef).padStart(2, '0')}-20`
+  // Período mostrado no cabeçalho do PDF: fechamento padrão (dia 20). Cada
+  // funcionário pode ter um dia de fechamento próprio (usado no cálculo das
+  // horas dele abaixo); a maioria usa o padrão, então o cabeçalho fica correto
+  // pra quase todo mundo mesmo quando alguém tem um dia customizado.
+  const { inicio, fim } = limitesPeriodo(anoRef, mesRef, 20)
 
   const usuarios =
     req.usuario.role === 'recepcao'
@@ -279,11 +340,12 @@ router.get('/folha-frequencia.pdf', requireRole('admin', 'coordenador', 'finance
       : db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1 ORDER BY nome COLLATE NOCASE').all(req.usuario.clinica_id)
 
   const funcionarios = usuarios.map((u) => {
+    const periodoUsuario = limitesPeriodo(anoRef, mesRef, u.dia_fechamento_folha || 20)
     const registros = db
       .prepare(
         `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
       )
-      .all(u.id, inicio, fim)
+      .all(u.id, periodoUsuario.inicio, periodoUsuario.fim)
 
     const porDia = {}
     for (const r of registros) {

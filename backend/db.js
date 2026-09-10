@@ -501,6 +501,8 @@ migrarColunas('usuarios', [
   ['carga_horaria_semanal_horas', 'REAL'],
   ['cargo', 'TEXT'],
   ['jornada_semanal', 'TEXT'],
+  ['dia_fechamento_folha', 'INTEGER NOT NULL DEFAULT 20'],
+  ['data_admissao', 'TEXT'],
 ])
 
 migrarColunas('pontos', [

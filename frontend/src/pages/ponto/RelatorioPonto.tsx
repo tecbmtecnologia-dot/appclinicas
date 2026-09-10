@@ -22,6 +22,11 @@ const MESES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ]
 
+function formatarData(dataISO: string) {
+  const [ano, mes, dia] = dataISO.split('-')
+  return `${dia}/${mes}/${ano}`
+}
+
 function formatarHoras(h: number) {
   const sinal = h < 0 ? '-' : ''
   const abs = Math.abs(h)
@@ -152,9 +157,10 @@ export default function RelatorioPonto() {
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Funcionário</th>
                   <th className="px-4 py-2.5 font-medium">Jornada</th>
-                  <th className="px-4 py-2.5 font-medium">Meta do mês</th>
+                  <th className="px-4 py-2.5 font-medium">Meta do período</th>
                   <th className="px-4 py-2.5 font-medium">Horas trabalhadas</th>
-                  <th className="px-4 py-2.5 font-medium">Saldo</th>
+                  <th className="px-4 py-2.5 font-medium">Saldo do período</th>
+                  <th className="px-4 py-2.5 font-medium">Saldo acumulado</th>
                   <th className="px-4 py-2.5 font-medium">Esta semana</th>
                   <th className="px-4 py-2.5 font-medium">Marcações</th>
                 </tr>
@@ -199,6 +205,22 @@ export default function RelatorioPonto() {
                         {r.saldo_horas > 0 ? '+' : ''}
                         {formatarHoras(r.saldo_horas)}
                       </Badge>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {r.saldo_acumulado ? (
+                        <>
+                          <Badge tone={r.saldo_acumulado.saldo < 0 ? 'red' : r.saldo_acumulado.saldo > 0 ? 'green' : 'slate'}>
+                            {r.saldo_acumulado.saldo > 0 ? '+' : ''}
+                            {formatarHoras(r.saldo_acumulado.saldo)}
+                          </Badge>
+                          <p className="text-[11px] text-slate-400 mt-1">
+                            desde {formatarData(r.saldo_acumulado.desde)} ({r.saldo_acumulado.periodos}{' '}
+                            {r.saldo_acumulado.periodos === 1 ? 'mês' : 'meses'})
+                          </p>
+                        </>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-slate-600">
                       {formatarHoras(r.semana_atual.horas_trabalhadas)}

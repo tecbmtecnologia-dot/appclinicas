@@ -23,6 +23,8 @@ export interface UsuarioForm {
   horario_saida?: string | null
   dias_trabalho_semana?: number
   jornada_semanal?: Record<string, HorarioDia> | null
+  dia_fechamento_folha?: number
+  data_admissao?: string | null
   ativo?: boolean
 }
 

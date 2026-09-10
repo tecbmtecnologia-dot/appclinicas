@@ -20,6 +20,8 @@ const vazio: UsuarioForm = {
   carga_horaria_mensal_horas: 160,
   carga_horaria_semanal_horas: null,
   jornada_semanal: {},
+  dia_fechamento_folha: 20,
+  data_admissao: '',
 }
 
 const DIAS_SEMANA: { codigo: DiaSemanaCodigo; rotulo: string }[] = [
@@ -158,6 +160,8 @@ export default function Usuarios() {
       carga_horaria_mensal_horas: u.carga_horaria_mensal_horas ?? 160,
       carga_horaria_semanal_horas: u.carga_horaria_semanal_horas ?? null,
       jornada_semanal: u.jornada_semanal ?? {},
+      dia_fechamento_folha: u.dia_fechamento_folha ?? 20,
+      data_admissao: u.data_admissao ?? '',
       ativo: !!u.ativo,
     })
     setFotoBlob(null)
@@ -358,6 +362,30 @@ export default function Usuarios() {
                 value={form.carga_horaria_mensal_horas ?? 160}
                 onChange={(e) => setForm({ ...form, carga_horaria_mensal_horas: Number(e.target.value) })}
               />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Data de admissão</Label>
+              <Input
+                type="date"
+                value={form.data_admissao ?? ''}
+                onChange={(e) => setForm({ ...form, data_admissao: e.target.value })}
+              />
+              <p className="text-xs text-slate-400 mt-1">Deixe em branco pra usar a data de criação da conta.</p>
+            </div>
+            <div>
+              <Label>Dia de fechamento da folha (1–28)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={28}
+                value={form.dia_fechamento_folha ?? 20}
+                onChange={(e) => setForm({ ...form, dia_fechamento_folha: Number(e.target.value) })}
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Ex: 20 → o mês fecha sempre do dia 21 do mês anterior ao dia 20 do mês de referência.
+              </p>
             </div>
           </div>
           <div>
