@@ -184,6 +184,7 @@ export interface ClinicaResumo {
   slug: string
   logo_url?: string | null
   cor_primaria?: string | null
+  modulos_opcionais?: string[]
 }
 
 export type TipoMarcaDagua = 'nenhuma' | 'logo' | 'texto'

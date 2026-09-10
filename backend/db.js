@@ -480,6 +480,7 @@ migrarColunas('clinicas', [
   ['marca_dagua_texto', 'TEXT'],
   ['telefone', 'TEXT'],
   ['email', 'TEXT'],
+  ['modulos_opcionais', 'TEXT'],
 ])
 
 migrarColunas('unidades', [

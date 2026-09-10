@@ -7,7 +7,14 @@ const router = Router()
 
 function clinicaPublica(clinica) {
   if (!clinica) return null
-  return { id: clinica.id, nome: clinica.nome, slug: clinica.slug, logo_url: clinica.logo_url, cor_primaria: clinica.cor_primaria }
+  return {
+    id: clinica.id,
+    nome: clinica.nome,
+    slug: clinica.slug,
+    logo_url: clinica.logo_url,
+    cor_primaria: clinica.cor_primaria,
+    modulos_opcionais: clinica.modulos_opcionais ? clinica.modulos_opcionais.split(',').map((s) => s.trim()).filter(Boolean) : [],
+  }
 }
 
 router.post('/login', (req, res) => {

@@ -230,41 +230,43 @@ export default function Prontuario() {
             </div>
           </div>
 
-          <Card className="p-5 mb-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Camera className="h-4 w-4 text-slate-500" />
-                <h3 className="font-semibold text-slate-800">Fotos (pré/pós-operatório)</h3>
+          {usuario?.clinica?.modulos_opcionais?.includes('fotos_pre_pos') && (
+            <Card className="p-5 mb-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Camera className="h-4 w-4 text-slate-500" />
+                  <h3 className="font-semibold text-slate-800">Fotos (pré/pós-operatório)</h3>
+                </div>
+                <Button variant="secondary" onClick={abrirNovaFoto}>
+                  + Adicionar foto
+                </Button>
               </div>
-              <Button variant="secondary" onClick={abrirNovaFoto}>
-                + Adicionar foto
-              </Button>
-            </div>
-            {fotos.length === 0 ? (
-              <p className="text-sm text-slate-400">Nenhuma foto registrada ainda.</p>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {fotos.map((f) => (
-                  <div key={f.id} className="relative group rounded-lg overflow-hidden border border-slate-200">
-                    <img src={f.foto_url} alt="" className="w-full aspect-square object-cover" />
-                    <div className="absolute inset-x-0 bottom-0 bg-slate-900/70 px-2 py-1">
-                      <Badge tone={f.tipo === 'pre_operatorio' ? 'amber' : 'green'}>{ROTULOS_TIPO_FOTO[f.tipo]}</Badge>
-                      <p className="text-[10px] text-white mt-0.5">{formatarDataBr(f.data)}</p>
+              {fotos.length === 0 ? (
+                <p className="text-sm text-slate-400">Nenhuma foto registrada ainda.</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {fotos.map((f) => (
+                    <div key={f.id} className="relative group rounded-lg overflow-hidden border border-slate-200">
+                      <img src={f.foto_url} alt="" className="w-full aspect-square object-cover" />
+                      <div className="absolute inset-x-0 bottom-0 bg-slate-900/70 px-2 py-1">
+                        <Badge tone={f.tipo === 'pre_operatorio' ? 'amber' : 'green'}>{ROTULOS_TIPO_FOTO[f.tipo]}</Badge>
+                        <p className="text-[10px] text-white mt-0.5">{formatarDataBr(f.data)}</p>
+                      </div>
+                      {!ehEnfermagem && (
+                        <button
+                          type="button"
+                          onClick={() => removerFoto(f)}
+                          className="absolute top-1 right-1 h-6 w-6 rounded-full bg-slate-900/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
-                    {!ehEnfermagem && (
-                      <button
-                        type="button"
-                        onClick={() => removerFoto(f)}
-                        className="absolute top-1 right-1 h-6 w-6 rounded-full bg-slate-900/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
 
           {sessoesFisio.length > 0 && (
             <Card className="p-5 mb-5">

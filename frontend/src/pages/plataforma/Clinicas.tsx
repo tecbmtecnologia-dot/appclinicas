@@ -15,6 +15,7 @@ interface FormState {
   admin_nome: string
   admin_email: string
   admin_senha: string
+  modulos_opcionais: string[]
 }
 
 const vazio: FormState = {
@@ -27,7 +28,12 @@ const vazio: FormState = {
   admin_nome: '',
   admin_email: '',
   admin_senha: '',
+  modulos_opcionais: [],
 }
+
+const MODULOS_OPCIONAIS: { valor: string; rotulo: string }[] = [
+  { valor: 'fotos_pre_pos', rotulo: 'Fotos de pré/pós-operatório (prontuário)' },
+]
 
 function paraFormState(c: Clinica): FormState {
   return {
@@ -40,6 +46,7 @@ function paraFormState(c: Clinica): FormState {
     admin_nome: '',
     admin_email: '',
     admin_senha: '',
+    modulos_opcionais: c.modulos_opcionais ?? [],
   }
 }
 
@@ -114,6 +121,7 @@ export default function Clinicas() {
         especialidades: especialidadesArray(),
         logo_url: form.logo_url || null,
         cor_primaria: form.cor_primaria,
+        modulos_opcionais: form.modulos_opcionais,
       }
       if (editando) {
         await clinicasApi.atualizar(editando.id, dados)
@@ -356,6 +364,29 @@ export default function Clinicas() {
               value={form.especialidadesTexto}
               onChange={(e) => setForm({ ...form, especialidadesTexto: e.target.value })}
             />
+          </div>
+          <div>
+            <Label>Módulos opcionais</Label>
+            <p className="text-xs text-slate-400 mb-1">Ative só o que fizer sentido pra essa clínica específica.</p>
+            <div className="space-y-1.5">
+              {MODULOS_OPCIONAIS.map((m) => (
+                <label key={m.valor} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.modulos_opcionais.includes(m.valor)}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        modulos_opcionais: e.target.checked
+                          ? [...f.modulos_opcionais, m.valor]
+                          : f.modulos_opcionais.filter((v) => v !== m.valor),
+                      }))
+                    }
+                  />
+                  {m.rotulo}
+                </label>
+              ))}
+            </div>
           </div>
 
           {!editando && (

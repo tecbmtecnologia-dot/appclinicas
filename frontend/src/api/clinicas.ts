@@ -8,6 +8,7 @@ export interface ClinicaForm {
   cnpj?: string | null
   endereco?: string | null
   especialidades?: string[]
+  modulos_opcionais?: string[]
   latitude?: number | null
   longitude?: number | null
   raio_metros?: number | null

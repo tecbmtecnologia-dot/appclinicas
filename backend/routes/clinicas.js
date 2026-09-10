@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 import { nanoid } from 'nanoid'
 import { db } from '../db.js'
 import { uploadLogo } from '../upload.js'
-import { especialidadesParaTexto, comEspecialidadesArray } from '../clinicaUtil.js'
+import { especialidadesParaTexto, comEspecialidadesArray, modulosParaTexto } from '../clinicaUtil.js'
 import unidadesRouter from './unidades.js'
 
 const router = Router()
@@ -42,7 +42,7 @@ router.get('/', (req, res) => {
 })
 
 router.post('/', (req, res) => {
-  const { nome, logo_url, cor_primaria, cnpj, endereco, especialidades, latitude, longitude, raio_metros, admin_nome, admin_email, admin_senha } = req.body
+  const { nome, logo_url, cor_primaria, cnpj, endereco, especialidades, modulos_opcionais, latitude, longitude, raio_metros, admin_nome, admin_email, admin_senha } = req.body
   if (!nome) return res.status(400).json({ error: 'Nome da clínica é obrigatório' })
 
   const querAdmin = admin_nome || admin_email || admin_senha
@@ -61,8 +61,8 @@ router.post('/', (req, res) => {
   const id = nanoid()
   const slug = slugUnico(gerarSlug(nome))
   db.prepare(
-    `INSERT INTO clinicas (id, nome, slug, logo_url, cor_primaria, cnpj, endereco, especialidades, latitude, longitude, raio_metros)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO clinicas (id, nome, slug, logo_url, cor_primaria, cnpj, endereco, especialidades, modulos_opcionais, latitude, longitude, raio_metros)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     nome,
@@ -72,6 +72,7 @@ router.post('/', (req, res) => {
     cnpj || null,
     endereco || null,
     especialidadesParaTexto(especialidades),
+    modulosParaTexto(modulos_opcionais),
     latitude != null && latitude !== '' ? Number(latitude) : null,
     longitude != null && longitude !== '' ? Number(longitude) : null,
     raio_metros != null && raio_metros !== '' ? Number(raio_metros) : null,
@@ -98,6 +99,8 @@ router.put('/:id', (req, res) => {
     endereco: req.body.endereco !== undefined ? req.body.endereco || null : existente.endereco,
     especialidades:
       req.body.especialidades !== undefined ? especialidadesParaTexto(req.body.especialidades) : existente.especialidades,
+    modulos_opcionais:
+      req.body.modulos_opcionais !== undefined ? modulosParaTexto(req.body.modulos_opcionais) : existente.modulos_opcionais,
     latitude: req.body.latitude !== undefined ? (req.body.latitude === '' ? null : Number(req.body.latitude)) : existente.latitude,
     longitude: req.body.longitude !== undefined ? (req.body.longitude === '' ? null : Number(req.body.longitude)) : existente.longitude,
     raio_metros:
@@ -106,7 +109,7 @@ router.put('/:id', (req, res) => {
   }
 
   db.prepare(
-    `UPDATE clinicas SET nome=?, logo_url=?, cor_primaria=?, cnpj=?, endereco=?, especialidades=?, latitude=?, longitude=?, raio_metros=?, ativo=? WHERE id=?`,
+    `UPDATE clinicas SET nome=?, logo_url=?, cor_primaria=?, cnpj=?, endereco=?, especialidades=?, modulos_opcionais=?, latitude=?, longitude=?, raio_metros=?, ativo=? WHERE id=?`,
   ).run(
     merged.nome,
     merged.logo_url,
@@ -114,6 +117,7 @@ router.put('/:id', (req, res) => {
     merged.cnpj,
     merged.endereco,
     merged.especialidades,
+    merged.modulos_opcionais,
     merged.latitude,
     merged.longitude,
     merged.raio_metros,
