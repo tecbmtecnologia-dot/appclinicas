@@ -258,6 +258,7 @@ export default function PacienteDetalhe() {
         altura_cm: formDados.altura_cm ? Number(formDados.altura_cm) : null,
         estado_civil: formDados.estado_civil || null,
         cor_raca: formDados.cor_raca || null,
+        sexo: formDados.sexo || null,
       }
       const atualizado = await pacientesApi.atualizar(paciente.id, dados)
       if (fotoBlob) await pacientesApi.enviarFoto(paciente.id, fotoBlob)
