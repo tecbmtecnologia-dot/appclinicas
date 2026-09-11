@@ -100,8 +100,25 @@ app.get('/api/manifest/:clinicaSlug/:perfilSlug', (req, res) => {
   const encontrado = buscarClinicaEPerfil(clinicaSlug, perfilSlug)
   if (!encontrado) return res.status(404).json({ error: 'Link de instalação não encontrado' })
   const { clinica, perfil } = encontrado
-  const icone = clinica.logo_app_url || clinica.logo_url || '/icons/icon-512.png'
-  const tipo = tipoImagemPorUrl(icone)
+  const logoClinica = clinica.logo_app_url || clinica.logo_url
+
+  // Logo enviado pela clínica é um upload livre (o usuário manda qualquer
+  // proporção/resolução), não garantidamente quadrado nem no tamanho exato
+  // declarado — anunciar "192x192"/"512x512" quando o arquivo real não bate
+  // com isso faz navegadores mais rígidos (inclusive o "Adicionar à Tela de
+  // Início" do iOS) descartarem o ícone por não corresponder ao que foi
+  // declarado. "any" é o valor correto do spec pra "serve em qualquer
+  // tamanho, eu escalo". Só o ícone padrão do app (bundled, tamanho real
+  // conhecido) usa sizes fixo — e evitamos "maskable" pro logo da clínica,
+  // que corta agressivamente em formas (círculo etc.) e fica ruim numa foto
+  // retangular qualquer.
+  const icons = logoClinica
+    ? [{ src: logoClinica, sizes: 'any', type: tipoImagemPorUrl(logoClinica) }]
+    : [
+        { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ]
 
   res.set('Content-Type', 'application/manifest+json')
   res.json({
@@ -114,11 +131,7 @@ app.get('/api/manifest/:clinicaSlug/:perfilSlug', (req, res) => {
     display: 'standalone',
     background_color: '#f8fafc',
     theme_color: clinica.cor_primaria || '#0e6f68',
-    icons: [
-      { src: icone, sizes: '192x192', type: tipo },
-      { src: icone, sizes: '512x512', type: tipo },
-      { src: icone, sizes: '512x512', type: tipo, purpose: 'maskable' },
-    ],
+    icons,
   })
 })
 

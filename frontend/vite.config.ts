@@ -93,8 +93,13 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
-        // API calls should always go to the network, never be cached as app-shell
-        navigateFallbackDenylist: [/^\/api\//],
+        // API calls e links de instalação (/instalar/:clinicaSlug/:perfilSlug) sempre
+        // devem ir pra rede, nunca ser respondidos com o app-shell genérico do cache —
+        // o service worker some pouco depois do primeiro acesso (registerType
+        // 'autoUpdate'), e sem essa exceção ele passa a interceptar visitas seguintes
+        // ao link de instalação e devolver o HTML/manifest genérico do cache em vez de
+        // deixar a edge function (instalar.ts) injetar nome/logo certos da clínica.
+        navigateFallbackDenylist: [/^\/api\//, /^\/instalar\//],
       },
       devOptions: {
         enabled: true,
