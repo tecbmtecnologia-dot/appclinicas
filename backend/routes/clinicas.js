@@ -91,8 +91,20 @@ router.put('/:id', (req, res) => {
   const existente = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)
   if (!existente) return res.status(404).json({ error: 'Clínica não encontrada' })
 
+  let slug = existente.slug
+  if (req.body.slug !== undefined && req.body.slug !== null && String(req.body.slug).trim() !== '') {
+    const slugLimpo = gerarSlug(req.body.slug)
+    if (!slugLimpo) return res.status(400).json({ error: 'Link inválido' })
+    if (slugLimpo !== existente.slug) {
+      const emUso = db.prepare('SELECT id FROM clinicas WHERE slug = ? AND id != ?').get(slugLimpo, req.params.id)
+      if (emUso) return res.status(409).json({ error: 'Já existe uma clínica usando este link' })
+      slug = slugLimpo
+    }
+  }
+
   const merged = {
     nome: req.body.nome ?? existente.nome,
+    slug,
     logo_url: req.body.logo_url !== undefined ? req.body.logo_url || null : existente.logo_url,
     cor_primaria: req.body.cor_primaria !== undefined ? req.body.cor_primaria || null : existente.cor_primaria,
     cnpj: req.body.cnpj !== undefined ? req.body.cnpj || null : existente.cnpj,
@@ -109,9 +121,10 @@ router.put('/:id', (req, res) => {
   }
 
   db.prepare(
-    `UPDATE clinicas SET nome=?, logo_url=?, cor_primaria=?, cnpj=?, endereco=?, especialidades=?, modulos_opcionais=?, latitude=?, longitude=?, raio_metros=?, ativo=? WHERE id=?`,
+    `UPDATE clinicas SET nome=?, slug=?, logo_url=?, cor_primaria=?, cnpj=?, endereco=?, especialidades=?, modulos_opcionais=?, latitude=?, longitude=?, raio_metros=?, ativo=? WHERE id=?`,
   ).run(
     merged.nome,
+    merged.slug,
     merged.logo_url,
     merged.cor_primaria,
     merged.cnpj,

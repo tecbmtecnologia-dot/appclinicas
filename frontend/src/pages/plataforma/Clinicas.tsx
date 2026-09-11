@@ -7,6 +7,7 @@ import type { Clinica, Unidade } from '../../types'
 
 interface FormState {
   nome: string
+  slug: string
   cnpj: string
   endereco: string
   especialidadesTexto: string
@@ -20,6 +21,7 @@ interface FormState {
 
 const vazio: FormState = {
   nome: '',
+  slug: '',
   cnpj: '',
   endereco: '',
   especialidadesTexto: '',
@@ -38,6 +40,7 @@ const MODULOS_OPCIONAIS: { valor: string; rotulo: string }[] = [
 function paraFormState(c: Clinica): FormState {
   return {
     nome: c.nome,
+    slug: c.slug ?? '',
     cnpj: c.cnpj ?? '',
     endereco: c.endereco ?? '',
     especialidadesTexto: (c.especialidades ?? []).join(', '),
@@ -124,7 +127,7 @@ export default function Clinicas() {
         modulos_opcionais: form.modulos_opcionais,
       }
       if (editando) {
-        await clinicasApi.atualizar(editando.id, dados)
+        await clinicasApi.atualizar(editando.id, { ...dados, slug: form.slug || undefined })
       } else {
         await clinicasApi.criar({
           ...dados,
@@ -322,6 +325,16 @@ export default function Clinicas() {
             <Label>Nome da clínica</Label>
             <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
           </div>
+          {editando && (
+            <div>
+              <Label>Link da clínica (usado nos links de instalação)</Label>
+              <Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
+              <p className="text-xs text-slate-400 mt-1">
+                Ex: se colocar "dr-rodolfo-mesquita", o link fica /instalar/dr-rodolfo-mesquita/... Links antigos com o
+                texto anterior param de funcionar.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>CNPJ</Label>

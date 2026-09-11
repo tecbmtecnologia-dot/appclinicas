@@ -3,6 +3,7 @@ import type { Clinica, Unidade } from '../types'
 
 export interface ClinicaForm {
   nome: string
+  slug?: string
   logo_url?: string | null
   cor_primaria?: string | null
   cnpj?: string | null
