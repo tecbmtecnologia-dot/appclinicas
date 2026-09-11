@@ -7,6 +7,7 @@ import { gerarHistoricoPacientePDF } from '../pdfHistoricoPaciente.js'
 
 const router = Router()
 const ACESSO = requireRole('admin', 'coordenador', 'medico', 'enfermagem', 'pj')
+const CRIACAO = requireRole('admin', 'coordenador', 'medico', 'enfermagem', 'pj', 'recepcao')
 const EDICAO = requireRole('admin', 'coordenador', 'medico')
 
 const SELECT_JOIN = `
@@ -54,7 +55,7 @@ router.get('/:id', ACESSO, (req, res) => {
   res.json(row)
 })
 
-router.post('/', ACESSO, (req, res) => {
+router.post('/', CRIACAO, (req, res) => {
   const { paciente_id, medico_id, data, queixa, diagnostico, prescricao, evolucao, observacoes } = req.body
   if (!paciente_id || !medico_id || !data) {
     return res.status(400).json({ error: 'paciente_id, medico_id e data são obrigatórios' })
@@ -62,9 +63,15 @@ router.post('/', ACESSO, (req, res) => {
   if (!validarReferencias(req.usuario.clinica_id, paciente_id, medico_id)) {
     return res.status(400).json({ error: 'Paciente ou médico inválido' })
   }
-  const restrito = ['enfermagem', 'pj'].includes(req.usuario.role)
-  if (restrito && !evolucao) {
+  const restritoEvolucao = ['enfermagem', 'pj'].includes(req.usuario.role)
+  if (restritoEvolucao && !evolucao) {
     return res.status(400).json({ error: 'Descreva a evolução' })
+  }
+  // Recepção só pode emitir receita em nome de um médico (quando ele não está na clínica),
+  // sem acesso a queixa/diagnóstico/evolução/observações do prontuário clínico.
+  const restritoReceita = req.usuario.role === 'recepcao'
+  if (restritoReceita && !prescricao) {
+    return res.status(400).json({ error: 'Descreva a prescrição' })
   }
   const id = nanoid()
   db.prepare(
@@ -76,11 +83,11 @@ router.post('/', ACESSO, (req, res) => {
     paciente_id,
     medico_id,
     data,
-    queixa ?? null,
-    restrito ? null : diagnostico ?? null,
-    restrito ? null : prescricao ?? null,
-    evolucao ?? null,
-    observacoes ?? null,
+    restritoReceita ? null : queixa ?? null,
+    restritoEvolucao || restritoReceita ? null : diagnostico ?? null,
+    restritoEvolucao ? null : prescricao ?? null,
+    restritoReceita ? null : evolucao ?? null,
+    restritoReceita ? null : observacoes ?? null,
     req.usuario.id,
   )
   res.status(201).json(db.prepare(SELECT_JOIN + ' WHERE pr.id = ?').get(id))
