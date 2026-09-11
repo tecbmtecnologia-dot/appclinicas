@@ -4,12 +4,21 @@
   publish = "dist"
 
 # Serve o HTML de /instalar/:clinicaSlug/:perfilSlug já com o nome da
-# clínica e o manifest certo, em vez do CLÍNICAS genérico (a função fica em
-# netlify/edge-functions/instalar.ts, na raiz do repo — local padrão do
-# Netlify para edge functions, independente do "base" do build acima).
+# clínica e o manifest certo, em vez do CLÍNICAS genérico. A função fica em
+# frontend/netlify/edge-functions/instalar.ts — dentro do "base" (frontend),
+# pois é ali que o Netlify procura a pasta netlify/edge-functions.
 [[edge_functions]]
   path = "/instalar/:clinicaSlug/:perfilSlug"
   function = "instalar"
+
+# O Netlify serve .webmanifest com Content-Type: application/octet-stream por
+# padrão. O Chrome pode recusar reconhecer o PWA como instalável (some a
+# opção "Instalar app" no menu ⋮ do Android) quando o manifest não vem com um
+# tipo JSON válido.
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
 
 # Repassa as chamadas de API e as imagens de upload para o backend no Render,
 # como se fossem da mesma origem (evita configurar CORS extra e não expõe a
