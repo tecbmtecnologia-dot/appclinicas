@@ -34,8 +34,13 @@ export default function Dashboard() {
         { label: 'Consultas hoje', value: counts.hoje, to: '/agendamento', icon: CalendarDays },
       ]
 
+  const primeiroNome = usuario?.nome?.split(' ')[0]
+
   return (
     <div>
+      {primeiroNome && (
+        <p className="text-sm font-medium text-brand-700 mb-1">Bem-vindo, {primeiroNome}!</p>
+      )}
       <PageHeader title="Visão geral" subtitle="Resumo rápido da clínica" icon={LayoutGrid} />
 
       {erro && (
