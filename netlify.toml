@@ -3,6 +3,14 @@
   command = "npm install && npm run build"
   publish = "dist"
 
+# Serve o HTML de /instalar/:clinicaSlug/:perfilSlug já com o nome da
+# clínica e o manifest certo, em vez do CLÍNICAS genérico (a função fica em
+# netlify/edge-functions/instalar.ts, na raiz do repo — local padrão do
+# Netlify para edge functions, independente do "base" do build acima).
+[[edge_functions]]
+  path = "/instalar/:clinicaSlug/:perfilSlug"
+  function = "instalar"
+
 # Repassa as chamadas de API e as imagens de upload para o backend no Render,
 # como se fossem da mesma origem (evita configurar CORS extra e não expõe a
 # URL do Render diretamente no código do frontend).
