@@ -513,6 +513,7 @@ function migrarColunas(tabela, colunas) {
 }
 
 migrarColunas('clinicas', [
+  ['logo_app_url', 'TEXT'],
   ['cnpj', 'TEXT'],
   ['endereco', 'TEXT'],
   ['especialidades', 'TEXT'],

@@ -191,7 +191,7 @@ export default function Layout() {
       ? navPlataforma
       : navOperacional.filter((item) => !item.roles || (usuario && item.roles.includes(usuario.role)))
   const nomeMarca = usuario?.clinica?.nome ?? 'CLÍNICAS'
-  const logoUrl = usuario?.clinica?.logo_url
+  const logoUrl = usuario?.clinica?.logo_app_url || usuario?.clinica?.logo_url
 
   return (
     <div className="flex min-h-dvh bg-app">

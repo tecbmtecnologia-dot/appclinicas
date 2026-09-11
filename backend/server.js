@@ -81,7 +81,7 @@ function buscarClinicaEPerfil(clinicaSlug, perfilSlug) {
 app.get('/api/clinica-publica/:clinicaSlug', (req, res) => {
   const clinica = db.prepare('SELECT * FROM clinicas WHERE slug = ? AND ativo = 1').get(req.params.clinicaSlug)
   if (!clinica) return res.status(404).json({ error: 'Clínica não encontrada' })
-  res.json({ nome: clinica.nome, logo_url: clinica.logo_url, cor_primaria: clinica.cor_primaria })
+  res.json({ nome: clinica.nome, logo_url: clinica.logo_app_url || clinica.logo_url, cor_primaria: clinica.cor_primaria })
 })
 
 app.get('/api/instalar-info/:clinicaSlug/:perfilSlug', (req, res) => {
@@ -89,7 +89,7 @@ app.get('/api/instalar-info/:clinicaSlug/:perfilSlug', (req, res) => {
   if (!encontrado) return res.status(404).json({ error: 'Link de instalação não encontrado' })
   res.json({
     clinica_nome: encontrado.clinica.nome,
-    logo_url: encontrado.clinica.logo_url,
+    logo_url: encontrado.clinica.logo_app_url || encontrado.clinica.logo_url,
     cor_primaria: encontrado.clinica.cor_primaria,
     perfil_nome: encontrado.perfil.nome,
   })
@@ -100,7 +100,7 @@ app.get('/api/manifest/:clinicaSlug/:perfilSlug', (req, res) => {
   const encontrado = buscarClinicaEPerfil(clinicaSlug, perfilSlug)
   if (!encontrado) return res.status(404).json({ error: 'Link de instalação não encontrado' })
   const { clinica, perfil } = encontrado
-  const icone = clinica.logo_url || '/icons/icon-512.png'
+  const icone = clinica.logo_app_url || clinica.logo_url || '/icons/icon-512.png'
   const tipo = tipoImagemPorUrl(icone)
 
   res.set('Content-Type', 'application/manifest+json')

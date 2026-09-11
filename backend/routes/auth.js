@@ -12,6 +12,7 @@ function clinicaPublica(clinica) {
     nome: clinica.nome,
     slug: clinica.slug,
     logo_url: clinica.logo_url,
+    logo_app_url: clinica.logo_app_url,
     cor_primaria: clinica.cor_primaria,
     modulos_opcionais: clinica.modulos_opcionais ? clinica.modulos_opcionais.split(',').map((s) => s.trim()).filter(Boolean) : [],
   }

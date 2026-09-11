@@ -208,6 +208,7 @@ export interface ClinicaResumo {
   nome: string
   slug: string
   logo_url?: string | null
+  logo_app_url?: string | null
   cor_primaria?: string | null
   modulos_opcionais?: string[]
 }

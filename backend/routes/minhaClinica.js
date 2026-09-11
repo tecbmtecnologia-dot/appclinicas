@@ -66,6 +66,15 @@ router.post('/logo', uploadLogo.single('logo'), (req, res) => {
   res.json(comEspecialidadesArray(db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)))
 })
 
+// Logo separado do app/tela de login — logo_url continua exclusivo dos PDFs
+// (relatórios e receitas), decisão explícita do usuário em 2026-09-11.
+router.post('/logo-app', uploadLogo.single('logo'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Envie um arquivo de imagem' })
+  const logoUrl = `/uploads/logos/${req.file.filename}`
+  db.prepare('UPDATE clinicas SET logo_app_url = ? WHERE id = ?').run(logoUrl, req.usuario.clinica_id)
+  res.json(comEspecialidadesArray(db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)))
+})
+
 router.use(
   '/unidades',
   (req, res, next) => {

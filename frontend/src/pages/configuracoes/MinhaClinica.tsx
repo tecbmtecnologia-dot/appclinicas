@@ -25,9 +25,11 @@ export default function MinhaClinica() {
   const [localizando, setLocalizando] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [enviandoLogo, setEnviandoLogo] = useState(false)
+  const [enviandoLogoApp, setEnviandoLogoApp] = useState(false)
   const [mensagem, setMensagem] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const arquivoLogoRef = useRef<HTMLInputElement>(null)
+  const arquivoLogoAppRef = useRef<HTMLInputElement>(null)
 
   const [unidades, setUnidades] = useState<Unidade[]>([])
   const [novaUnidade, setNovaUnidade] = useState<{
@@ -125,11 +127,26 @@ export default function MinhaClinica() {
       const atualizada = await minhaClinicaApi.uploadLogo(arquivo)
       setClinica(atualizada)
       await atualizarUsuario()
-      setMensagem('Logotipo atualizado.')
+      setMensagem('Logo dos relatórios e receitas atualizado.')
     } catch (err) {
       setErro(err instanceof ApiError ? err.message : 'Erro ao enviar o logotipo.')
     } finally {
       setEnviandoLogo(false)
+    }
+  }
+
+  async function enviarLogoApp(arquivo: File) {
+    setEnviandoLogoApp(true)
+    setErro(null)
+    try {
+      const atualizada = await minhaClinicaApi.uploadLogoApp(arquivo)
+      setClinica(atualizada)
+      await atualizarUsuario()
+      setMensagem('Logo do aplicativo e tela de login atualizado.')
+    } catch (err) {
+      setErro(err instanceof ApiError ? err.message : 'Erro ao enviar o logotipo.')
+    } finally {
+      setEnviandoLogoApp(false)
     }
   }
 
@@ -187,7 +204,7 @@ export default function MinhaClinica() {
             </div>
           )}
           <div>
-            <Label>Logotipo</Label>
+            <Label>Logo dos relatórios e receitas</Label>
             <input
               ref={arquivoLogoRef}
               type="file"
@@ -203,7 +220,42 @@ export default function MinhaClinica() {
               <Upload className="h-3.5 w-3.5" />
               {enviandoLogo ? 'Enviando...' : 'Trocar logotipo'}
             </Button>
-            <p className="text-xs text-slate-400 mt-1">PNG, JPG, WEBP ou SVG, até 3MB.</p>
+            <p className="text-xs text-slate-400 mt-1">PNG, JPG, WEBP ou SVG, até 3MB. Aparece no cabeçalho dos PDFs (relatórios, receitas etc).</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          {clinica.logo_app_url ? (
+            <img src={clinica.logo_app_url} alt="" className="h-16 w-16 rounded-xl object-cover ring-1 ring-slate-200" />
+          ) : (
+            <div
+              className="h-16 w-16 rounded-xl flex items-center justify-center text-white font-bold text-xl shrink-0"
+              style={{ backgroundColor: corPrimaria || '#0f766e' }}
+            >
+              {nome.charAt(0).toUpperCase() || '?'}
+            </div>
+          )}
+          <div>
+            <Label>Logo do aplicativo e tela de login</Label>
+            <input
+              ref={arquivoLogoAppRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              className="hidden"
+              onChange={(e) => {
+                const arquivo = e.target.files?.[0]
+                if (arquivo) enviarLogoApp(arquivo)
+                e.target.value = ''
+              }}
+            />
+            <Button type="button" variant="secondary" onClick={() => arquivoLogoAppRef.current?.click()} disabled={enviandoLogoApp}>
+              <Upload className="h-3.5 w-3.5" />
+              {enviandoLogoApp ? 'Enviando...' : 'Trocar logotipo'}
+            </Button>
+            <p className="text-xs text-slate-400 mt-1">
+              PNG, JPG, WEBP ou SVG, até 3MB. Aparece no menu do sistema, na tela de login e ao instalar como app. Se não for
+              enviado, usa o logo dos relatórios acima.
+            </p>
           </div>
         </div>
 

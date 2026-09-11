@@ -30,6 +30,11 @@ export const minhaClinicaApi = {
     formData.append('logo', arquivo)
     return api.upload<Clinica>('/minha-clinica/logo', formData)
   },
+  uploadLogoApp: (arquivo: File) => {
+    const formData = new FormData()
+    formData.append('logo', arquivo)
+    return api.upload<Clinica>('/minha-clinica/logo-app', formData)
+  },
   unidades: {
     listar: () => api.get<Unidade[]>('/minha-clinica/unidades'),
     criar: (data: UnidadeForm) => api.post<Unidade>('/minha-clinica/unidades', data),
