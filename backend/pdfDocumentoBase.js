@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const EXTENSOES_SUPORTADAS_PDFKIT = new Set(['.png', '.jpg', '.jpeg'])
+// Mesma lógica de upload.js/server.js: em produção (Render) os uploads ficam no disco
+// persistente (UPLOADS_DIR), não dentro da pasta do backend — usar __dirname aqui faria
+// o PDF nunca achar o logo em produção, mesmo com o arquivo salvo corretamente.
+const UPLOADS_ROOT = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads')
 
 const FONTE_REGULAR = path.join(__dirname, 'fonts/PlusJakartaSans-Regular.ttf')
 const FONTE_SEMIBOLD = path.join(__dirname, 'fonts/PlusJakartaSans-SemiBold.ttf')
@@ -50,7 +54,8 @@ function caminhoLogo(clinica) {
   if (!clinica?.logo_url) return null
   const ext = path.extname(clinica.logo_url).toLowerCase()
   if (!EXTENSOES_SUPORTADAS_PDFKIT.has(ext)) return null
-  const caminho = path.join(__dirname, clinica.logo_url.replace(/^\//, ''))
+  const relativo = clinica.logo_url.replace(/^\/?uploads\//, '')
+  const caminho = path.join(UPLOADS_ROOT, relativo)
   return fs.existsSync(caminho) ? caminho : null
 }
 
