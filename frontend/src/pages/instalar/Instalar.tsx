@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Smartphone } from 'lucide-react'
+import { Smartphone, TriangleAlert } from 'lucide-react'
 import { Button, Card } from '../../components/ui'
 import { instalarApi } from '../../api/instalar'
 import { ApiError } from '../../api/client'
@@ -41,6 +41,14 @@ function aplicarMetadadosInstalacao(info: InstalarInfo, clinicaSlug: string, per
     }
     appleIcon.setAttribute('href', info.logo_url)
   }
+}
+
+// WhatsApp, Instagram, Facebook etc. abrem links num navegador embutido sem
+// as opções de instalar PWA (o menu ⋮ deles nem tem "Instalar app" nem
+// "Adicionar à tela inicial") — precisa abrir no navegador de verdade antes.
+function abriuEmNavegadorEmbutido() {
+  const ua = navigator.userAgent || ''
+  return /FBAN|FBAV|Instagram|WhatsApp|Line\/|MicroMessenger|; ?wv\)/i.test(ua)
 }
 
 export default function Instalar() {
@@ -85,11 +93,24 @@ export default function Instalar() {
             <h1 className="text-lg font-bold text-slate-900">{info.perfil_nome}</h1>
             <p className="text-sm text-slate-500 mb-6">{info.clinica_nome}</p>
 
+            {abriuEmNavegadorEmbutido() && (
+              <div className="text-left text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 flex items-start gap-2">
+                <TriangleAlert className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+                <span>
+                  Você abriu esse link pelo WhatsApp, Instagram ou outro app parecido — esse navegador interno não
+                  tem a opção de instalar. Toque nos "⋮" (ou no ícone de abrir no navegador) dessa tela e escolha
+                  <strong> "Abrir no navegador"</strong> (ou "Abrir no Chrome") antes de continuar.
+                </span>
+              </div>
+            )}
+
             <div className="text-left text-sm text-slate-600 space-y-3 bg-slate-50 rounded-xl p-4 mb-6">
               <p className="flex items-start gap-2">
                 <Smartphone className="h-4 w-4 mt-0.5 shrink-0 text-brand-700" />
                 <span>
                   <strong>Android:</strong> toque no menu (⋮) do navegador e escolha "Instalar app" ou "Adicionar à tela inicial".
+                  Se essas opções não aparecerem, você provavelmente está num navegador embutido (WhatsApp,
+                  Instagram etc.) — abra o link no Chrome de verdade primeiro.
                 </span>
               </p>
               <p className="flex items-start gap-2">
