@@ -107,6 +107,109 @@ router.delete('/catalogo-itens/:id', GESTAO_CATALOGO, (req, res) => {
   res.status(204).end()
 })
 
+// Modelo de orçamento = um conjunto de itens do catálogo salvo com um nome,
+// pra montar um orçamento novo só selecionando o modelo em vez de escolher
+// item por item toda vez. Só guarda item_id+quantidade (nunca preço), os
+// valores são sempre resolvidos ao vivo a partir do catálogo (preço atual).
+function itensModeloParaTexto(itens) {
+  return JSON.stringify(
+    itens.map((it) => ({
+      item_id: it.item_id,
+      quantidade: Number(it.quantidade) > 0 ? Number(it.quantidade) : 1,
+    })),
+  )
+}
+
+function validarItensModelo(itens, clinicaId) {
+  if (!Array.isArray(itens) || itens.length === 0) return { erro: 'Selecione ao menos um item do catálogo' }
+  for (const item of itens) {
+    if (!item || !item.item_id) return { erro: 'Item inválido' }
+    const catalogo = db
+      .prepare('SELECT id FROM itens_orcamento_catalogo WHERE id = ? AND clinica_id = ?')
+      .get(item.item_id, clinicaId)
+    if (!catalogo) return { erro: 'Item não encontrado no catálogo' }
+  }
+  return {}
+}
+
+function comItensModeloArray(row) {
+  if (!row) return row
+  let lista = []
+  try {
+    lista = row.itens ? JSON.parse(row.itens) : []
+  } catch {
+    lista = []
+  }
+  const itens = lista.map((it) => {
+    const catalogo = db.prepare('SELECT nome, valor FROM itens_orcamento_catalogo WHERE id = ?').get(it.item_id)
+    const quantidade = Number(it.quantidade) > 0 ? Number(it.quantidade) : 1
+    return {
+      item_id: it.item_id,
+      descricao: catalogo ? catalogo.nome : '(item removido do catálogo)',
+      valor_unitario: catalogo ? catalogo.valor : 0,
+      quantidade,
+      valor: catalogo ? catalogo.valor * quantidade : 0,
+    }
+  })
+  return { ...row, itens }
+}
+
+router.get('/modelos', (req, res) => {
+  const ativo = req.query.ativo
+  let sql = 'SELECT * FROM orcamento_modelos WHERE clinica_id = ?'
+  const params = [req.usuario.clinica_id]
+  if (ativo !== undefined) {
+    sql += ' AND ativo = ?'
+    params.push(ativo === 'true' || ativo === '1' ? 1 : 0)
+  }
+  sql += ' ORDER BY nome ASC'
+  res.json(db.prepare(sql).all(...params).map(comItensModeloArray))
+})
+
+router.post('/modelos', GESTAO_CATALOGO, (req, res) => {
+  const { nome, itens } = req.body
+  if (!nome || !nome.trim()) return res.status(400).json({ error: 'Nome do modelo é obrigatório' })
+  const validacao = validarItensModelo(itens, req.usuario.clinica_id)
+  if (validacao.erro) return res.status(400).json({ error: validacao.erro })
+
+  const id = nanoid()
+  db.prepare(`INSERT INTO orcamento_modelos (id, clinica_id, nome, itens, criado_por) VALUES (?, ?, ?, ?, ?)`).run(
+    id,
+    req.usuario.clinica_id,
+    nome.trim(),
+    itensModeloParaTexto(itens),
+    req.usuario.id,
+  )
+
+  res.status(201).json(comItensModeloArray(db.prepare('SELECT * FROM orcamento_modelos WHERE id = ?').get(id)))
+})
+
+router.put('/modelos/:id', GESTAO_CATALOGO, (req, res) => {
+  const existente = db
+    .prepare('SELECT * FROM orcamento_modelos WHERE id = ? AND clinica_id = ?')
+    .get(req.params.id, req.usuario.clinica_id)
+  if (!existente) return res.status(404).json({ error: 'Modelo não encontrado' })
+
+  const nome = req.body.nome !== undefined ? req.body.nome.trim() : existente.nome
+  if (!nome) return res.status(400).json({ error: 'Nome do modelo é obrigatório' })
+
+  let itensTexto = existente.itens
+  if (req.body.itens !== undefined) {
+    const validacao = validarItensModelo(req.body.itens, req.usuario.clinica_id)
+    if (validacao.erro) return res.status(400).json({ error: validacao.erro })
+    itensTexto = itensModeloParaTexto(req.body.itens)
+  }
+  const ativo = req.body.ativo !== undefined ? (req.body.ativo ? 1 : 0) : existente.ativo
+
+  db.prepare('UPDATE orcamento_modelos SET nome=?, itens=?, ativo=? WHERE id=?').run(nome, itensTexto, ativo, req.params.id)
+  res.json(comItensModeloArray(db.prepare('SELECT * FROM orcamento_modelos WHERE id = ?').get(req.params.id)))
+})
+
+router.delete('/modelos/:id', GESTAO_CATALOGO, (req, res) => {
+  db.prepare('DELETE FROM orcamento_modelos WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
+  res.status(204).end()
+})
+
 router.get('/', (req, res) => {
   const { paciente_id, status } = req.query
   let sql = SELECT_JOIN + ' WHERE o.clinica_id = ?'

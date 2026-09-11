@@ -2,7 +2,7 @@ import PDFDocument from 'pdfkit'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { desenharMarcaDagua, desenharRodapeContato, enderecoCompleto, formatarData } from './pdfDocumentoBase.js'
+import { desenharCabecalhoLogo, desenharFaixaSecao, desenharMarcaDagua, desenharRodapeContato, enderecoCompleto, formatarData, registrarFontes } from './pdfDocumentoBase.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const EXTENSOES_SUPORTADAS_PDFKIT = new Set(['.png', '.jpg', '.jpeg'])
@@ -35,25 +35,21 @@ export function gerarHistoricoPacientePDF(res, { paciente, registros, fotos, cli
   res.setHeader('Content-Type', 'application/pdf')
   res.setHeader('Content-Disposition', `inline; filename="historico-${paciente.id}.pdf"`)
   doc.pipe(res)
+  registrarFontes(doc)
 
   doc.on('pageAdded', () => desenharMarcaDagua(doc, clinica))
   desenharMarcaDagua(doc, clinica)
 
-  doc.fontSize(16).font('Helvetica-Bold').text(clinica?.nome ?? 'Clínica', { align: 'left' })
-  if (clinica?.cnpj) doc.fontSize(9).font('Helvetica').fillColor('#555').text(`CNPJ: ${clinica.cnpj}`)
-  doc.fillColor('#000')
-  doc.moveDown(1)
-  doc.fontSize(14).font('Helvetica-Bold').text('Histórico Completo do Paciente', { align: 'center' })
-  doc.moveDown(1.2)
+  const paleta = desenharCabecalhoLogo(doc, clinica, 'Histórico Completo do Paciente')
+  doc.moveDown(0.5)
 
   function linha(rotulo, valor) {
     if (!valor) return
-    doc.font('Helvetica-Bold').fontSize(10).text(rotulo, { continued: true })
-    doc.font('Helvetica').text(`  ${valor}`)
+    doc.font('Jakarta-Bold').fontSize(10).text(rotulo, { continued: true })
+    doc.font('Jakarta').text(`  ${valor}`)
   }
 
-  doc.fontSize(11).font('Helvetica-Bold').text('Dados cadastrais')
-  doc.moveDown(0.3)
+  desenharFaixaSecao(doc, paleta, 'Dados cadastrais')
   linha('Nome:', paciente.nome)
   linha('CPF:', paciente.cpf)
   linha('RG:', paciente.rg)
@@ -74,14 +70,13 @@ export function gerarHistoricoPacientePDF(res, { paciente, registros, fotos, cli
   linha('Primeira consulta:', formatarData(paciente.data_primeira_consulta))
   doc.moveDown(1)
 
-  doc.fontSize(11).font('Helvetica-Bold').text(`Prontuário (${registros.length} registro${registros.length === 1 ? '' : 's'})`)
-  doc.moveDown(0.3)
+  desenharFaixaSecao(doc, paleta, `Prontuário (${registros.length} registro${registros.length === 1 ? '' : 's'})`)
   if (registros.length === 0) {
-    doc.font('Helvetica').fontSize(10).text('Nenhum registro de prontuário.')
+    doc.font('Jakarta').fontSize(10).text('Nenhum registro de prontuário.')
   } else {
     for (const r of registros) {
-      doc.font('Helvetica-Bold').fontSize(10).text(`${formatarData(r.data)} — Dr(a). ${r.medico_nome ?? '—'}`)
-      doc.font('Helvetica').fontSize(10)
+      doc.font('Jakarta-Bold').fontSize(10).text(`${formatarData(r.data)} — Dr(a). ${r.medico_nome ?? '—'}`)
+      doc.font('Jakarta').fontSize(10)
       if (r.queixa) doc.text(`Queixa: ${r.queixa}`)
       if (r.diagnostico) doc.text(`Diagnóstico: ${r.diagnostico}`)
       if (r.prescricao) doc.text(`Prescrição: ${r.prescricao}`)
@@ -92,18 +87,17 @@ export function gerarHistoricoPacientePDF(res, { paciente, registros, fotos, cli
   }
   doc.moveDown(0.5)
 
-  doc.fontSize(11).font('Helvetica-Bold').text(`Fotos (${fotos.length})`)
-  doc.moveDown(0.3)
+  desenharFaixaSecao(doc, paleta, `Fotos (${fotos.length})`)
   if (fotos.length === 0) {
-    doc.font('Helvetica').fontSize(10).text('Nenhuma foto registrada.')
+    doc.font('Jakarta').fontSize(10).text('Nenhuma foto registrada.')
   } else {
     for (const f of fotos) {
       const espacoRestante = doc.page.height - doc.page.margins.bottom - doc.y
       if (espacoRestante < 170) doc.addPage()
 
-      doc.font('Helvetica-Bold').fontSize(10).text(`${ROTULOS_TIPO_FOTO[f.tipo] ?? f.tipo} — ${formatarData(f.data)}`)
+      doc.font('Jakarta-Bold').fontSize(10).text(`${ROTULOS_TIPO_FOTO[f.tipo] ?? f.tipo} — ${formatarData(f.data)}`)
       if (f.observacoes) {
-        doc.font('Helvetica').fontSize(9).fillColor('#555').text(f.observacoes)
+        doc.font('Jakarta').fontSize(9).fillColor('#555').text(f.observacoes)
         doc.fillColor('#000')
       }
       doc.moveDown(0.2)
@@ -114,11 +108,11 @@ export function gerarHistoricoPacientePDF(res, { paciente, registros, fotos, cli
         try {
           doc.image(caminho, { fit: [200, 150] })
         } catch {
-          doc.font('Helvetica').fontSize(9).fillColor('#a00').text('(não foi possível carregar esta imagem)')
+          doc.font('Jakarta').fontSize(9).fillColor('#a00').text('(não foi possível carregar esta imagem)')
           doc.fillColor('#000')
         }
       } else {
-        doc.font('Helvetica').fontSize(9).fillColor('#a00').text('(formato de imagem não suportado neste PDF)')
+        doc.font('Jakarta').fontSize(9).fillColor('#a00').text('(formato de imagem não suportado neste PDF)')
         doc.fillColor('#000')
       }
       doc.moveDown(1)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2, Wallet } from 'lucide-react'
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Select, Textarea } from '../../components/ui'
+import { SeletorPaciente } from '../../components/SeletorPaciente'
 import { orcamentosApi, type ItemOrcamentoInput, type OrcamentoForm } from '../../api/orcamentos'
 import { pagamentosApi, type PagamentoForm } from '../../api/pagamentos'
 import { despesasApi, type DespesaForm } from '../../api/despesas'
@@ -11,6 +12,7 @@ import { ApiError } from '../../api/client'
 import type {
   DespesaClinica,
   ItemOrcamentoCatalogo,
+  ModeloOrcamento,
   Orcamento,
   Paciente,
   Pagamento,
@@ -153,6 +155,7 @@ function AbaResumo({ podeVerClinica }: { podeVerClinica: boolean }) {
 
 const vazioOrcamento: OrcamentoForm = { paciente_id: '', titulo: '', itens: [], observacoes: '' }
 const vazioItemCatalogo = { nome: '', valor: 0 }
+const vazioModelo = { nome: '', itens: [] as ItemOrcamentoInput[] }
 
 function AbaOrcamentos({
   pacientes,
@@ -166,13 +169,21 @@ function AbaOrcamentos({
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([])
   const [catalogoAtivo, setCatalogoAtivo] = useState<ItemOrcamentoCatalogo[]>([])
   const [catalogoTodos, setCatalogoTodos] = useState<ItemOrcamentoCatalogo[]>([])
+  const [modelosAtivos, setModelosAtivos] = useState<ModeloOrcamento[]>([])
+  const [modelosTodos, setModelosTodos] = useState<ModeloOrcamento[]>([])
   const [carregando, setCarregando] = useState(true)
   const [modalAberto, setModalAberto] = useState(false)
   const [form, setForm] = useState<OrcamentoForm>(vazioOrcamento)
+  const [editandoOrcamentoId, setEditandoOrcamentoId] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [erroForm, setErroForm] = useState<string | null>(null)
   const [modalCatalogoAberto, setModalCatalogoAberto] = useState(false)
   const [novoItemCatalogo, setNovoItemCatalogo] = useState(vazioItemCatalogo)
+  const [modalModelosAberto, setModalModelosAberto] = useState(false)
+  const [editandoModeloId, setEditandoModeloId] = useState<string | null>(null)
+  const [formModelo, setFormModelo] = useState(vazioModelo)
+  const [salvandoModelo, setSalvandoModelo] = useState(false)
+  const [erroModelo, setErroModelo] = useState<string | null>(null)
 
   function carregar() {
     setCarregando(true)
@@ -185,11 +196,30 @@ function AbaOrcamentos({
     orcamentosApi.catalogo.listar(true).then(setCatalogoAtivo)
     if (podeGerenciarCatalogo) orcamentosApi.catalogo.listar().then(setCatalogoTodos)
   }
+  function carregarModelos() {
+    orcamentosApi.modelos.listar(true).then(setModelosAtivos)
+    if (podeGerenciarCatalogo) orcamentosApi.modelos.listar().then(setModelosTodos)
+  }
   useEffect(carregar, [])
   useEffect(carregarCatalogo, [])
+  useEffect(carregarModelos, [])
 
   function abrirNovo() {
     setForm(vazioOrcamento)
+    setEditandoOrcamentoId(null)
+    setErroForm(null)
+    setModalAberto(true)
+  }
+
+  function abrirEdicao(o: Orcamento) {
+    setForm({
+      paciente_id: o.paciente_id,
+      titulo: o.titulo,
+      itens: o.itens.map((it) => ({ item_id: it.item_id, quantidade: it.quantidade })),
+      observacoes: o.observacoes ?? '',
+      status: o.status,
+    })
+    setEditandoOrcamentoId(o.id)
     setErroForm(null)
     setModalAberto(true)
   }
@@ -215,11 +245,20 @@ function AbaOrcamentos({
 
   const totalForm = form.itens.reduce((s, it) => s + valorItem(it), 0)
 
+  function aplicarModelo(modeloId: string) {
+    if (!modeloId) return
+    const modelo = modelosAtivos.find((m) => m.id === modeloId)
+    if (!modelo) return
+    setForm({ ...form, itens: modelo.itens.map((it) => ({ item_id: it.item_id, quantidade: it.quantidade })) })
+  }
+
   async function salvar() {
     setSalvando(true)
     setErroForm(null)
     try {
-      await orcamentosApi.criar({ ...form, itens: form.itens.filter((it) => it.item_id) })
+      const dados = { ...form, itens: form.itens.filter((it) => it.item_id) }
+      if (editandoOrcamentoId) await orcamentosApi.atualizar(editandoOrcamentoId, dados)
+      else await orcamentosApi.criar(dados)
       setModalAberto(false)
       carregar()
     } catch (err) {
@@ -258,12 +297,73 @@ function AbaOrcamentos({
     carregarCatalogo()
   }
 
+  function abrirNovoModelo() {
+    setFormModelo(vazioModelo)
+    setEditandoModeloId(null)
+    setErroModelo(null)
+  }
+
+  function editarModelo(modelo: ModeloOrcamento) {
+    setFormModelo({ nome: modelo.nome, itens: modelo.itens.map((it) => ({ item_id: it.item_id, quantidade: it.quantidade })) })
+    setEditandoModeloId(modelo.id)
+    setErroModelo(null)
+  }
+
+  function atualizarItemModelo(i: number, campo: keyof ItemOrcamentoInput, valor: string) {
+    const itens = [...formModelo.itens]
+    itens[i] = { ...itens[i], [campo]: campo === 'quantidade' ? Number(valor) : valor }
+    setFormModelo({ ...formModelo, itens })
+  }
+
+  function adicionarItemModelo() {
+    setFormModelo({ ...formModelo, itens: [...formModelo.itens, { item_id: '', quantidade: 1 }] })
+  }
+
+  function removerItemModelo(i: number) {
+    setFormModelo({ ...formModelo, itens: formModelo.itens.filter((_, idx) => idx !== i) })
+  }
+
+  const totalFormModelo = formModelo.itens.reduce((s, it) => s + valorItem(it), 0)
+
+  async function salvarModelo() {
+    setSalvandoModelo(true)
+    setErroModelo(null)
+    try {
+      const dados = { nome: formModelo.nome, itens: formModelo.itens.filter((it) => it.item_id) }
+      if (editandoModeloId) await orcamentosApi.modelos.atualizar(editandoModeloId, dados)
+      else await orcamentosApi.modelos.criar(dados)
+      abrirNovoModelo()
+      carregarModelos()
+    } catch (err) {
+      setErroModelo(err instanceof ApiError ? err.message : 'Erro ao salvar modelo de orçamento.')
+    } finally {
+      setSalvandoModelo(false)
+    }
+  }
+
+  async function alternarAtivoModelo(modelo: ModeloOrcamento) {
+    await orcamentosApi.modelos.atualizar(modelo.id, { ativo: !modelo.ativo })
+    carregarModelos()
+  }
+
+  async function removerModelo(modelo: ModeloOrcamento) {
+    if (!confirm(`Remover o modelo "${modelo.nome}"?`)) return
+    await orcamentosApi.modelos.remover(modelo.id)
+    if (editandoModeloId === modelo.id) abrirNovoModelo()
+    carregarModelos()
+  }
+
   return (
     <div>
       <div className="flex justify-end gap-2 mb-4">
         {podeGerenciarCatalogo && (
           <Button variant="secondary" onClick={() => setModalCatalogoAberto(true)}>
             Catálogo de itens
+          </Button>
+        )}
+        {podeGerenciarCatalogo && (
+          <Button variant="secondary" onClick={() => setModalModelosAberto(true)}>
+            Modelos de orçamento
           </Button>
         )}
         {podeGerenciarOrcamento && <Button onClick={abrirNovo}>+ Novo orçamento</Button>}
@@ -294,6 +394,9 @@ function AbaOrcamentos({
                         <option value="aprovado">Aprovado</option>
                         <option value="recusado">Recusado</option>
                       </Select>
+                      <Button variant="secondary" onClick={() => abrirEdicao(o)}>
+                        Editar
+                      </Button>
                       <Button variant="danger" onClick={() => remover(o)}>
                         Remover
                       </Button>
@@ -308,23 +411,35 @@ function AbaOrcamentos({
         </div>
       )}
 
-      <Modal open={modalAberto} onClose={() => setModalAberto(false)} title="Novo orçamento">
+      <Modal open={modalAberto} onClose={() => setModalAberto(false)} title={editandoOrcamentoId ? 'Editar orçamento' : 'Novo orçamento'}>
         <div className="space-y-3">
           <div>
             <Label>Paciente</Label>
-            <Select value={form.paciente_id} onChange={(e) => setForm({ ...form, paciente_id: e.target.value })}>
-              <option value="">Selecione...</option>
-              {pacientes.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome}
-                </option>
-              ))}
-            </Select>
+            <SeletorPaciente
+              pacientes={pacientes}
+              value={form.paciente_id}
+              onChange={(id) => setForm({ ...form, paciente_id: id })}
+              disabled={!!editandoOrcamentoId}
+            />
+            {editandoOrcamentoId && <p className="text-xs text-slate-400 mt-1">O paciente não pode ser alterado após criado.</p>}
           </div>
           <div>
             <Label>Título</Label>
             <Input value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
           </div>
+          {modelosAtivos.length > 0 && (
+            <div>
+              <Label>Usar modelo de orçamento (opcional)</Label>
+              <Select value="" onChange={(e) => aplicarModelo(e.target.value)}>
+                <option value="">Selecione um modelo para preencher os itens...</option>
+                {modelosAtivos.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nome} — {moeda(m.itens.reduce((s, it) => s + it.valor, 0))}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
           <div>
             <Label>Itens (selecione do catálogo)</Label>
             {catalogoAtivo.length === 0 && (
@@ -415,6 +530,98 @@ function AbaOrcamentos({
                       {item.ativo ? 'Desativar' : 'Ativar'}
                     </Button>
                     <Button variant="danger" onClick={() => removerItemCatalogo(item)}>
+                      Remover
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={modalModelosAberto}
+        onClose={() => {
+          setModalModelosAberto(false)
+          abrirNovoModelo()
+        }}
+        title="Modelos de orçamento"
+      >
+        <div className="space-y-4">
+          <div className="space-y-2 border border-slate-200 rounded-lg p-3">
+            <Label>{editandoModeloId ? 'Editando modelo' : 'Novo modelo'}</Label>
+            <Input placeholder="Nome do modelo" value={formModelo.nome} onChange={(e) => setFormModelo({ ...formModelo, nome: e.target.value })} />
+            {catalogoAtivo.length === 0 ? (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Cadastre itens no catálogo antes de montar um modelo.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {formModelo.itens.map((item, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <Select value={item.item_id} onChange={(e) => atualizarItemModelo(i, 'item_id', e.target.value)}>
+                      <option value="">Selecione um item...</option>
+                      {catalogoAtivo.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome} — {moeda(c.valor)}
+                        </option>
+                      ))}
+                    </Select>
+                    <Input
+                      type="number"
+                      placeholder="Qtd"
+                      className="w-20"
+                      value={item.quantidade ?? 1}
+                      onChange={(e) => atualizarItemModelo(i, 'quantidade', e.target.value)}
+                    />
+                    <p className="text-sm text-slate-600 w-24 text-right shrink-0">{moeda(valorItem(item))}</p>
+                    <button onClick={() => removerItemModelo(i)} className="text-slate-400 hover:text-red-600 shrink-0">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                <Button type="button" variant="ghost" onClick={adicionarItemModelo}>
+                  <Plus className="h-3.5 w-3.5" /> Adicionar item
+                </Button>
+              </div>
+            )}
+            <p className="text-sm font-semibold text-slate-700">Total: {moeda(totalFormModelo)}</p>
+            {erroModelo && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erroModelo}</p>}
+            <div className="flex justify-end gap-2">
+              {editandoModeloId && (
+                <Button variant="secondary" onClick={abrirNovoModelo}>
+                  Cancelar edição
+                </Button>
+              )}
+              <Button
+                onClick={salvarModelo}
+                disabled={salvandoModelo || !formModelo.nome.trim() || formModelo.itens.filter((it) => it.item_id).length === 0}
+              >
+                {salvandoModelo ? 'Salvando...' : editandoModeloId ? 'Salvar alterações' : 'Criar modelo'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {modelosTodos.length === 0 ? (
+              <EmptyState text="Nenhum modelo cadastrado ainda." />
+            ) : (
+              modelosTodos.map((modelo) => (
+                <div key={modelo.id} className="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{modelo.nome}</p>
+                    <p className="text-xs text-slate-400">{modelo.itens.map((it) => it.descricao).join(', ')}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{moeda(modelo.itens.reduce((s, it) => s + it.valor, 0))}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="secondary" onClick={() => editarModelo(modelo)}>
+                      Editar
+                    </Button>
+                    <Button variant="secondary" onClick={() => alternarAtivoModelo(modelo)}>
+                      {modelo.ativo ? 'Desativar' : 'Ativar'}
+                    </Button>
+                    <Button variant="danger" onClick={() => removerModelo(modelo)}>
                       Remover
                     </Button>
                   </div>
@@ -547,14 +754,7 @@ function AbaPagamentos({ pacientes }: { pacientes: Paciente[] }) {
         <div className="space-y-3">
           <div>
             <Label>Paciente</Label>
-            <Select value={form.paciente_id} onChange={(e) => setForm({ ...form, paciente_id: e.target.value })}>
-              <option value="">Selecione...</option>
-              {pacientes.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome}
-                </option>
-              ))}
-            </Select>
+            <SeletorPaciente pacientes={pacientes} value={form.paciente_id} onChange={(id) => setForm({ ...form, paciente_id: id })} />
           </div>
           <div>
             <Label>Descrição</Label>

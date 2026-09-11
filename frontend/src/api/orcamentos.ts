@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { ItemOrcamentoCatalogo, Orcamento, StatusOrcamento } from '../types'
+import type { ItemOrcamentoCatalogo, ModeloOrcamento, Orcamento, StatusOrcamento } from '../types'
 
 export interface ItemOrcamentoInput {
   item_id: string
@@ -31,5 +31,12 @@ export const orcamentosApi = {
     atualizar: (id: string, data: Partial<{ nome: string; valor: number; ativo: boolean }>) =>
       api.put<ItemOrcamentoCatalogo>(`/orcamentos/catalogo-itens/${id}`, data),
     remover: (id: string) => api.del<void>(`/orcamentos/catalogo-itens/${id}`),
+  },
+  modelos: {
+    listar: (ativo?: boolean) => api.get<ModeloOrcamento[]>(`/orcamentos/modelos${ativo !== undefined ? `?ativo=${ativo}` : ''}`),
+    criar: (data: { nome: string; itens: ItemOrcamentoInput[] }) => api.post<ModeloOrcamento>('/orcamentos/modelos', data),
+    atualizar: (id: string, data: Partial<{ nome: string; itens: ItemOrcamentoInput[]; ativo: boolean }>) =>
+      api.put<ModeloOrcamento>(`/orcamentos/modelos/${id}`, data),
+    remover: (id: string) => api.del<void>(`/orcamentos/modelos/${id}`),
   },
 }

@@ -114,6 +114,16 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS orcamento_modelos (
+    id TEXT PRIMARY KEY,
+    clinica_id TEXT NOT NULL REFERENCES clinicas(id),
+    nome TEXT NOT NULL,
+    itens TEXT NOT NULL,
+    ativo INTEGER NOT NULL DEFAULT 1,
+    criado_por TEXT REFERENCES usuarios(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS pagamentos (
     id TEXT PRIMARY KEY,
     clinica_id TEXT NOT NULL REFERENCES clinicas(id),
@@ -226,6 +236,17 @@ db.exec(`
     id TEXT PRIMARY KEY,
     medico_id TEXT NOT NULL REFERENCES medicos(id),
     hospital_id TEXT NOT NULL REFERENCES hospitais(id)
+  );
+
+  -- Um período contínuo de atendimento por dia da semana (0=domingo..6=sábado). Um médico
+  -- sem nenhuma linha aqui é tratado como "sem restrição configurada" (comportamento antigo,
+  -- agenda livre) — só passa a bloquear fora do horário depois que ele cadastra ao menos um dia.
+  CREATE TABLE IF NOT EXISTS medico_disponibilidade (
+    id TEXT PRIMARY KEY,
+    medico_id TEXT NOT NULL REFERENCES medicos(id),
+    dia_semana INTEGER NOT NULL,
+    hora_inicio TEXT NOT NULL,
+    hora_fim TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS itens_cirurgia_catalogo (
@@ -372,6 +393,27 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS contrato_modelo (
+    id TEXT PRIMARY KEY,
+    clinica_id TEXT NOT NULL UNIQUE REFERENCES clinicas(id),
+    texto TEXT NOT NULL DEFAULT '',
+    atualizado_por TEXT REFERENCES usuarios(id),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Um registro por lote: o mesmo produto pode ter várias linhas com validades
+  -- diferentes (decisão explícita do usuário, pra saber exatamente o que vence quando).
+  CREATE TABLE IF NOT EXISTS estoque_itens (
+    id TEXT PRIMARY KEY,
+    clinica_id TEXT NOT NULL REFERENCES clinicas(id),
+    descricao TEXT NOT NULL,
+    quantidade REAL NOT NULL DEFAULT 0,
+    data_validade TEXT,
+    criado_por TEXT REFERENCES usuarios(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    atualizado_em TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS comissoes_avulsas (
     id TEXT PRIMARY KEY,
     clinica_id TEXT NOT NULL REFERENCES clinicas(id),
@@ -426,6 +468,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_orcamentos_clinica ON orcamentos(clinica_id);
   CREATE INDEX IF NOT EXISTS idx_orcamentos_paciente ON orcamentos(paciente_id);
   CREATE INDEX IF NOT EXISTS idx_itens_orcamento_catalogo_clinica ON itens_orcamento_catalogo(clinica_id);
+  CREATE INDEX IF NOT EXISTS idx_orcamento_modelos_clinica ON orcamento_modelos(clinica_id);
   CREATE INDEX IF NOT EXISTS idx_pagamentos_clinica ON pagamentos(clinica_id);
   CREATE INDEX IF NOT EXISTS idx_pagamentos_paciente ON pagamentos(paciente_id);
   CREATE INDEX IF NOT EXISTS idx_despesas_clinica ON despesas_clinica(clinica_id);
@@ -517,6 +560,8 @@ migrarColunas('prontuarios', [
 
 migrarColunas('cirurgias', [['hospital_id', 'TEXT REFERENCES hospitais(id)']])
 
+migrarColunas('medicos', [['intervalo_slot_minutos', 'INTEGER NOT NULL DEFAULT 30']])
+
 migrarColunas('cirurgia_itens', [['quantidade', 'INTEGER NOT NULL DEFAULT 1']])
 
 migrarColunas('comissoes_avulsas', [
@@ -526,6 +571,7 @@ migrarColunas('comissoes_avulsas', [
 
 migrarColunas('pacientes', [
   ['rg', 'TEXT'],
+  ['sexo', 'TEXT'],
   ['foto_url', 'TEXT'],
   ['cep', 'TEXT'],
   ['logradouro', 'TEXT'],
@@ -537,6 +583,7 @@ migrarColunas('pacientes', [
   ['estado_civil', 'TEXT'],
   ['data_primeira_consulta', 'TEXT'],
   ['nome_responsavel', 'TEXT'],
+  ['nome_mae', 'TEXT'],
   ['profissao', 'TEXT'],
   ['cor_raca', 'TEXT'],
   ['peso_kg', 'REAL'],
@@ -554,6 +601,8 @@ migrarColunas('agendamentos', [['tipo_procedimento_id', 'TEXT REFERENCES tipos_p
 migrarColunas('tipos_procedimento', [['gera_cirurgia', 'INTEGER NOT NULL DEFAULT 0']])
 
 migrarColunas('cirurgias', [['agendamento_id', 'TEXT REFERENCES agendamentos(id)']])
+
+migrarColunas('cirurgias', [['observacoes_financeiras', 'TEXT']])
 
 migrarColunas('despesas_clinica', [
   ['usuario_id_referencia', 'TEXT'],

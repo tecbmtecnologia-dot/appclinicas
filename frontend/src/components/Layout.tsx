@@ -2,14 +2,15 @@ import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
   BarChart3,
+  Boxes,
   Building,
   Building2,
   CalendarDays,
-  ClipboardList,
   ClipboardPlus,
   Clock,
   FileBarChart,
   FileSignature,
+  FileText,
   HandCoins,
   LayoutGrid,
   LogOut,
@@ -40,7 +41,6 @@ const navAppInstalado = [{ to: '/ponto', label: 'Ponto', end: true, icon: Clock 
 const navOperacional: { to: string; label: string; end?: boolean; roles?: Role[]; icon: LucideIcon }[] = [
   { to: '/', label: 'Início', end: true, icon: LayoutGrid },
   { to: '/agendamento', label: 'Agendamento', roles: ['admin', 'coordenador', 'recepcao', 'medico', 'financeiro'], icon: CalendarDays },
-  { to: '/prontuario', label: 'Prontuário', roles: ['admin', 'coordenador', 'medico', 'enfermagem', 'pj'], icon: ClipboardList },
   { to: '/administrativo/pacientes', label: 'Pacientes', icon: Users },
   { to: '/painel-clinica', label: 'Painel da clínica', roles: ['coordenador'], icon: PieChart },
   { to: '/relatorios', label: 'Relatórios', roles: ['admin'], icon: FileBarChart },
@@ -54,6 +54,7 @@ const navOperacional: { to: string; label: string; end?: boolean; roles?: Role[]
     roles: ['admin', 'coordenador', 'enfermagem'],
     icon: UserCog2,
   },
+  { to: '/estoque', label: 'Estoque', roles: ['admin', 'coordenador', 'enfermagem'], icon: Boxes },
   { to: '/administrativo/usuarios', label: 'Usuários', roles: ['admin', 'coordenador'], icon: UserCog },
   { to: '/telemedicina', label: 'Telemedicina', roles: ['admin', 'coordenador', 'medico'], icon: Video },
   { to: '/reunioes', label: 'Reuniões', icon: Users2 },
@@ -71,6 +72,7 @@ const navOperacional: { to: string; label: string; end?: boolean; roles?: Role[]
   { to: '/configuracoes/clinica', label: 'Minha Clínica', roles: ['admin'], icon: Building2 },
   { to: '/configuracoes/perfis-instalacao', label: 'Apps da equipe', roles: ['admin'], icon: Smartphone },
   { to: '/configuracoes/modelos-receita', label: 'Modelos de receita', roles: ['admin'], icon: FileSignature },
+  { to: '/configuracoes/contrato', label: 'Modelo de contrato', roles: ['admin'], icon: FileText },
   { to: '/configuracoes/itens-cirurgia', label: 'Itens de cirurgia', roles: ['admin'], icon: PackagePlus },
   { to: '/configuracoes/tipos-procedimento', label: 'Tipos de procedimento', roles: ['admin'], icon: ClipboardPlus },
 ]

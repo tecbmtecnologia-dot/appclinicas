@@ -38,6 +38,8 @@ import dashboardRouter from './routes/dashboard.js'
 import modelosReceitaRouter from './routes/modelosReceita.js'
 import notasFiscaisPacienteRouter from './routes/notasFiscaisPaciente.js'
 import contratosPacienteRouter from './routes/contratosPaciente.js'
+import contratoModeloRouter from './routes/contratoModelo.js'
+import estoqueRouter from './routes/estoque.js'
 import fotosPacienteRouter from './routes/fotosPaciente.js'
 import { requireAuth, requireRole, requireClinica } from './auth.js'
 
@@ -151,6 +153,8 @@ app.use('/api/dashboard', requireAuth, requireClinica, dashboardRouter)
 app.use('/api/modelos-receita', requireAuth, requireClinica, modelosReceitaRouter)
 app.use('/api/notas-fiscais-paciente', requireAuth, requireClinica, notasFiscaisPacienteRouter)
 app.use('/api/contratos-paciente', requireAuth, requireClinica, contratosPacienteRouter)
+app.use('/api/contrato-modelo', requireAuth, requireClinica, contratoModeloRouter)
+app.use('/api/estoque', requireAuth, requireClinica, estoqueRouter)
 app.use('/api/fotos-paciente', requireAuth, requireClinica, fotosPacienteRouter)
 app.use('/api/clinicas', requireAuth, requireRole('super_admin'), clinicasRouter)
 

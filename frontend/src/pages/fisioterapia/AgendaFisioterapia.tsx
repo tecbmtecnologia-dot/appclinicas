@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
-import { Button, Card, EmptyState, Input, Label, Modal, PageHeader, Select } from '../../components/ui'
+import { Button, Card, EmptyState, Input, Label, Modal, PageHeader } from '../../components/ui'
+import { SeletorPaciente } from '../../components/SeletorPaciente'
 import { sessoesFisioterapiaApi } from '../../api/sessoesFisioterapia'
 import { pacientesApi } from '../../api/pacientes'
 import { ApiError } from '../../api/client'
@@ -254,14 +255,7 @@ export default function AgendaFisioterapia() {
         <div className="space-y-3">
           <div>
             <Label>Paciente</Label>
-            <Select value={form.paciente_id} onChange={(e) => setForm({ ...form, paciente_id: e.target.value })}>
-              <option value="">Selecione...</option>
-              {pacientes.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome}
-                </option>
-              ))}
-            </Select>
+            <SeletorPaciente pacientes={pacientes} value={form.paciente_id} onChange={(id) => setForm({ ...form, paciente_id: id })} />
           </div>
           <div>
             <Label>Data e hora</Label>

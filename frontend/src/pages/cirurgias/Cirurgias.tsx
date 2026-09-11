@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FileDown, Scissors } from 'lucide-react'
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Select, Textarea } from '../../components/ui'
+import { SeletorPaciente } from '../../components/SeletorPaciente'
 import { cirurgiasApi, type CirurgiaForm } from '../../api/cirurgias'
 import { pacientesApi } from '../../api/pacientes'
 import { medicosApi } from '../../api/medicos'
@@ -19,6 +20,7 @@ const vazio: CirurgiaForm = {
   hospital_id: '',
   equipe: '',
   observacoes: '',
+  observacoes_financeiras: '',
   auxiliares: [],
   itens: [],
 }
@@ -33,6 +35,7 @@ function formatarData(v?: string | null) {
 export default function Cirurgias() {
   const { usuario } = useAuth()
   const podeExcluir = usuario?.role === 'admin' || usuario?.role === 'coordenador'
+  const podeFinanceiro = usuario?.role === 'admin' || usuario?.role === 'coordenador' || usuario?.role === 'pj'
   const [cirurgias, setCirurgias] = useState<Cirurgia[]>([])
   const [pacientes, setPacientes] = useState<Paciente[]>([])
   const [medicos, setMedicos] = useState<Medico[]>([])
@@ -88,6 +91,7 @@ export default function Cirurgias() {
       hospital_id: c.hospital_id ?? '',
       equipe: c.equipe ?? '',
       observacoes: c.observacoes ?? '',
+      observacoes_financeiras: c.observacoes_financeiras ?? '',
       auxiliares: c.auxiliares.map((a) => a.id),
       itens: c.itens.map((i) => ({ item_id: i.id, quantidade: i.quantidade })),
     })
@@ -208,9 +212,16 @@ export default function Cirurgias() {
                     </p>
                   )}
                   {c.itens.length > 0 && (
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Itens usados: {c.itens.map((i) => `${i.nome} (×${i.quantidade})`).join(', ')}
-                    </p>
+                    <div className="text-xs text-slate-400 mt-0.5">
+                      <p>Itens usados:</p>
+                      <ul className="mt-0.5 space-y-0.5">
+                        {c.itens.map((i) => (
+                          <li key={i.id}>
+                            • {i.nome} (×{i.quantidade})
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -246,18 +257,12 @@ export default function Cirurgias() {
           )}
           <div>
             <Label>Paciente</Label>
-            <Select
+            <SeletorPaciente
+              pacientes={pacientes}
               value={form.paciente_id}
-              onChange={(e) => setForm({ ...form, paciente_id: e.target.value })}
+              onChange={(id) => setForm({ ...form, paciente_id: id })}
               disabled={!!editando}
-            >
-              <option value="">Selecione...</option>
-              {pacientes.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome}
-                </option>
-              ))}
-            </Select>
+            />
           </div>
           <div>
             <Label>Nome da cirurgia</Label>
@@ -346,9 +351,20 @@ export default function Cirurgias() {
             <Input value={form.equipe ?? ''} onChange={(e) => setForm({ ...form, equipe: e.target.value })} />
           </div>
           <div>
-            <Label>Observações</Label>
+            <Label>Observações cirúrgicas</Label>
             <Textarea rows={3} value={form.observacoes ?? ''} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} />
           </div>
+          {podeFinanceiro && (
+            <div>
+              <Label>Observações financeiras</Label>
+              <Textarea
+                rows={3}
+                value={form.observacoes_financeiras ?? ''}
+                onChange={(e) => setForm({ ...form, observacoes_financeiras: e.target.value })}
+              />
+              <p className="text-xs text-slate-400 mt-1">Visível só para coordenação, consultoria e administração.</p>
+            </div>
+          )}
           {erroForm && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erroForm}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setModalAberto(false)}>

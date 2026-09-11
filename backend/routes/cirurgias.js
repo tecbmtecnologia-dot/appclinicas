@@ -8,6 +8,9 @@ import { gerarRelatorioCirurgiaPDF } from '../pdfRelatorioCirurgia.js'
 const router = Router()
 const ACESSO = requireRole('admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'pj')
 const EXCLUSAO = requireRole('admin', 'coordenador')
+// Observações financeiras são preenchidas pela coordenação/consultora — outros perfis do relatório
+// (médico, enfermagem, recepção) não devem ver nem editar esse campo.
+const PODE_FINANCEIRO = new Set(['admin', 'coordenador', 'pj'])
 
 router.use(ACESSO)
 
@@ -18,6 +21,12 @@ const SELECT_JOIN = `
   LEFT JOIN medicos m ON m.id = c.medico_id
   LEFT JOIN hospitais h ON h.id = c.hospital_id
 `
+
+function ocultarFinanceiroSeNecessario(cirurgia, role) {
+  if (!cirurgia || PODE_FINANCEIRO.has(role)) return cirurgia
+  const { observacoes_financeiras, ...resto } = cirurgia
+  return resto
+}
 
 function comAuxiliares(cirurgia) {
   if (!cirurgia) return cirurgia
@@ -74,17 +83,23 @@ router.get('/', (req, res) => {
     params.push(status)
   }
   sql += ' ORDER BY c.created_at DESC'
-  res.json(db.prepare(sql).all(...params).map(comAuxiliares))
+  res.json(
+    db
+      .prepare(sql)
+      .all(...params)
+      .map(comAuxiliares)
+      .map((c) => ocultarFinanceiroSeNecessario(c, req.usuario.role)),
+  )
 })
 
 router.get('/:id', (req, res) => {
   const row = db.prepare(SELECT_JOIN + ' WHERE c.id = ? AND c.clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!row) return res.status(404).json({ error: 'Cirurgia não encontrada' })
-  res.json(comAuxiliares(row))
+  res.json(ocultarFinanceiroSeNecessario(comAuxiliares(row), req.usuario.role))
 })
 
 router.post('/', (req, res) => {
-  const { paciente_id, medico_id, nome_cirurgia, data_prevista, hospital_id, local_hospital, equipe, observacoes, auxiliares, itens } = req.body
+  const { paciente_id, medico_id, nome_cirurgia, data_prevista, hospital_id, local_hospital, equipe, observacoes, observacoes_financeiras, auxiliares, itens } = req.body
   if (!paciente_id || !nome_cirurgia) {
     return res.status(400).json({ error: 'Paciente e nome da cirurgia são obrigatórios' })
   }
@@ -101,8 +116,8 @@ router.post('/', (req, res) => {
 
   const id = nanoid()
   db.prepare(
-    `INSERT INTO cirurgias (id, clinica_id, paciente_id, medico_id, nome_cirurgia, data_prevista, hospital_id, local_hospital, equipe, observacoes, criado_por)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO cirurgias (id, clinica_id, paciente_id, medico_id, nome_cirurgia, data_prevista, hospital_id, local_hospital, equipe, observacoes, observacoes_financeiras, criado_por)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     req.usuario.clinica_id,
@@ -114,6 +129,7 @@ router.post('/', (req, res) => {
     local_hospital || null,
     equipe || null,
     observacoes || null,
+    PODE_FINANCEIRO.has(req.usuario.role) ? observacoes_financeiras || null : null,
     req.usuario.id,
   )
   if (!salvarAuxiliares(req.usuario.clinica_id, id, auxiliares)) {
@@ -122,7 +138,7 @@ router.post('/', (req, res) => {
   if (!salvarItens(req.usuario.clinica_id, id, itens)) {
     return res.status(400).json({ error: 'Um dos itens é inválido' })
   }
-  res.status(201).json(comAuxiliares(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(id)))
+  res.status(201).json(ocultarFinanceiroSeNecessario(comAuxiliares(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(id)), req.usuario.role))
 })
 
 router.put('/:id', (req, res) => {
@@ -147,12 +163,18 @@ router.put('/:id', (req, res) => {
     local_hospital: req.body.local_hospital !== undefined ? req.body.local_hospital || null : existente.local_hospital,
     equipe: req.body.equipe !== undefined ? req.body.equipe || null : existente.equipe,
     observacoes: req.body.observacoes !== undefined ? req.body.observacoes || null : existente.observacoes,
+    // Só quem tem permissão financeira pode alterar esse campo — outros perfis mandando o campo no corpo são ignorados.
+    observacoes_financeiras: PODE_FINANCEIRO.has(req.usuario.role)
+      ? req.body.observacoes_financeiras !== undefined
+        ? req.body.observacoes_financeiras || null
+        : existente.observacoes_financeiras
+      : existente.observacoes_financeiras,
     // Editar um relatório já finalizado volta para rascunho — exige nova finalização (e novo aviso ao médico).
     status: eraPronta ? 'rascunho' : existente.status,
   }
 
   db.prepare(
-    `UPDATE cirurgias SET medico_id=?, nome_cirurgia=?, data_prevista=?, hospital_id=?, local_hospital=?, equipe=?, observacoes=?, status=?, atualizado_em=datetime('now') WHERE id=?`,
+    `UPDATE cirurgias SET medico_id=?, nome_cirurgia=?, data_prevista=?, hospital_id=?, local_hospital=?, equipe=?, observacoes=?, observacoes_financeiras=?, status=?, atualizado_em=datetime('now') WHERE id=?`,
   ).run(
     merged.medico_id,
     merged.nome_cirurgia,
@@ -161,6 +183,7 @@ router.put('/:id', (req, res) => {
     merged.local_hospital,
     merged.equipe,
     merged.observacoes,
+    merged.observacoes_financeiras,
     merged.status,
     req.params.id,
   )
@@ -172,7 +195,7 @@ router.put('/:id', (req, res) => {
     return res.status(400).json({ error: 'Um dos itens é inválido' })
   }
 
-  res.json(comAuxiliares(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id)))
+  res.json(ocultarFinanceiroSeNecessario(comAuxiliares(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id)), req.usuario.role))
 })
 
 router.put('/:id/finalizar', (req, res) => {
@@ -200,7 +223,7 @@ router.put('/:id/finalizar', (req, res) => {
     })
   }
 
-  res.json(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id))
+  res.json(ocultarFinanceiroSeNecessario(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id), req.usuario.role))
 })
 
 router.get('/:id/relatorio.pdf', (req, res) => {
@@ -211,7 +234,8 @@ router.get('/:id/relatorio.pdf', (req, res) => {
   const hospital = cirurgia.hospital_id ? db.prepare('SELECT * FROM hospitais WHERE id = ?').get(cirurgia.hospital_id) : null
   const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const { auxiliares, itens } = comAuxiliares(cirurgia)
-  gerarRelatorioCirurgiaPDF(res, { cirurgia, paciente, medico, hospital, clinica, auxiliares, itens })
+  const cirurgiaFiltrada = ocultarFinanceiroSeNecessario(cirurgia, req.usuario.role)
+  gerarRelatorioCirurgiaPDF(res, { cirurgia: cirurgiaFiltrada, paciente, medico, hospital, clinica, auxiliares, itens })
 })
 
 router.delete('/:id', EXCLUSAO, (req, res) => {

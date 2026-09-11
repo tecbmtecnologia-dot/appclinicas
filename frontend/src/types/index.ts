@@ -1,11 +1,13 @@
 export type EstadoCivil = 'solteiro' | 'casado' | 'divorciado' | 'viuvo' | 'uniao_estavel' | 'outro'
 export type CorRaca = 'branca' | 'preta' | 'parda' | 'amarela' | 'indigena' | 'nao_informado'
+export type Sexo = 'feminino' | 'masculino' | 'nao_informado'
 
 export interface Paciente {
   id: string
   nome: string
   cpf: string
   rg?: string
+  sexo?: Sexo | null
   data_nascimento: string
   telefone: string
   email: string
@@ -22,6 +24,7 @@ export interface Paciente {
   estado_civil?: EstadoCivil | null
   data_primeira_consulta?: string | null
   nome_responsavel?: string | null
+  nome_mae?: string | null
   profissao?: string | null
   cor_raca?: CorRaca | null
   peso_kg?: number | null
@@ -33,6 +36,13 @@ export interface Paciente {
   created_at: string
 }
 
+export interface DisponibilidadeMedico {
+  id: string
+  dia_semana: number
+  hora_inicio: string
+  hora_fim: string
+}
+
 export interface Medico {
   id: string
   nome: string
@@ -41,6 +51,8 @@ export interface Medico {
   telefone: string
   email: string
   hospitais: { id: string; nome: string }[]
+  disponibilidade: DisponibilidadeMedico[]
+  intervalo_slot_minutos: number
   created_at: string
 }
 
@@ -61,7 +73,7 @@ export interface Auxiliar {
   created_at: string
 }
 
-export type StatusAgendamento = 'agendado' | 'confirmado' | 'cancelado' | 'concluido'
+export type StatusAgendamento = 'agendado' | 'confirmado' | 'cancelado' | 'concluido' | 'faltou'
 export type TipoAtendimento = 'presencial' | 'telemedicina'
 
 export interface Agendamento {
@@ -329,6 +341,7 @@ export interface Cirurgia {
   hospital_nome?: string | null
   equipe?: string | null
   observacoes?: string | null
+  observacoes_financeiras?: string | null
   auxiliares: { id: string; nome: string; funcao: string | null }[]
   itens: { id: string; nome: string; quantidade: number }[]
   status: StatusCirurgia
@@ -352,6 +365,16 @@ export interface ItemOrcamentoCatalogo {
   clinica_id: string
   nome: string
   valor: number
+  ativo: number
+  criado_por?: string | null
+  created_at: string
+}
+
+export interface ModeloOrcamento {
+  id: string
+  clinica_id: string
+  nome: string
+  itens: ItemOrcamento[]
   ativo: number
   criado_por?: string | null
   created_at: string
@@ -434,6 +457,20 @@ export interface NotaFiscalPaciente {
   nome_arquivo?: string | null
   criado_por?: string | null
   created_at: string
+}
+
+export interface EstoqueItem {
+  id: string
+  descricao: string
+  quantidade: number
+  data_validade?: string | null
+  created_at: string
+  atualizado_em: string
+}
+
+export interface ContratoModelo {
+  texto: string
+  updated_at?: string | null
 }
 
 export interface ContratoPaciente {

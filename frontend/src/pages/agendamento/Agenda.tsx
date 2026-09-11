@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CalendarClock, CalendarDays, ChevronLeft, ChevronRight, Stethoscope } from 'lucide-react'
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Select } from '../../components/ui'
-import { agendamentosApi } from '../../api/agendamentos'
+import { SeletorPaciente } from '../../components/SeletorPaciente'
+import { agendamentosApi, type DisponibilidadeDia } from '../../api/agendamentos'
 import { compromissosApi } from '../../api/compromissos'
 import { pacientesApi } from '../../api/pacientes'
 import { medicosApi } from '../../api/medicos'
@@ -13,6 +14,14 @@ import type { Agendamento, Compromisso, Medico, Paciente, StatusAgendamento, Tip
 
 function hoje() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function dataParte(dataHora: string) {
+  return dataHora.split('T')[0] ?? ''
+}
+
+function horaParte(dataHora: string) {
+  return dataHora.split('T')[1] ?? ''
 }
 
 const NOMES_MES = [
@@ -44,6 +53,7 @@ const statusTom: Record<StatusAgendamento, 'slate' | 'green' | 'red' | 'amber' |
   confirmado: 'green',
   cancelado: 'red',
   concluido: 'slate',
+  faltou: 'amber',
 }
 
 interface FormAgendamento {
@@ -92,6 +102,7 @@ export default function Agenda() {
   const [formPaciente, setFormPaciente] = useState(vazioPaciente)
   const [salvandoPaciente, setSalvandoPaciente] = useState(false)
   const [erroPaciente, setErroPaciente] = useState<string | null>(null)
+  const [disponibilidadeAgenda, setDisponibilidadeAgenda] = useState<DisponibilidadeDia | null>(null)
   const [modalCompromissoAberto, setModalCompromissoAberto] = useState(false)
   const [formCompromisso, setFormCompromisso] = useState<FormCompromisso>(vazioCompromisso)
   const [salvandoCompromisso, setSalvandoCompromisso] = useState(false)
@@ -118,6 +129,26 @@ export default function Agenda() {
     medicosApi.listar().then(setMedicos).catch(() => {})
     tiposProcedimentoApi.listar().then(setTiposProcedimento).catch(() => {})
   }, [])
+
+  // Busca os horários livres do médico assim que ele e a data estiverem escolhidos no
+  // formulário — se o médico não tiver disponibilidade cadastrada, a API responde
+  // `configurado: false` e o formulário volta a aceitar qualquer horário (comportamento antigo).
+  useEffect(() => {
+    if (!modalAberto) return
+    const data = dataParte(form.data_hora)
+    if (!form.medico_id || !data) {
+      setDisponibilidadeAgenda(null)
+      return
+    }
+    let cancelado = false
+    agendamentosApi
+      .disponibilidade(form.medico_id, data, editandoAgendamento?.id)
+      .then((r) => !cancelado && setDisponibilidadeAgenda(r))
+      .catch(() => !cancelado && setDisponibilidadeAgenda(null))
+    return () => {
+      cancelado = true
+    }
+  }, [modalAberto, form.medico_id, dataParte(form.data_hora), editandoAgendamento])
 
   // Depois de criar/cancelar/concluir algo, recarrega o mês em exibição — se o item
   // criado caiu num mês diferente do exibido, troca o mês (o useEffect acima já recarrega).
@@ -239,14 +270,36 @@ export default function Agenda() {
     carregarMes(anoMes)
   }
 
-  function atender(a: Agendamento) {
-    navigate(`/prontuario?paciente=${a.paciente_id}`)
+  async function marcarFalta(a: Agendamento) {
+    if (!confirm('Marcar que o paciente não compareceu a esta consulta?')) return
+    await agendamentosApi.atualizar(a.id, { status: 'faltou' })
+    carregarMes(anoMes)
   }
 
-  const podeSalvar = useMemo(
-    () => form.paciente_id && form.medico_id && form.tipo_procedimento_id && form.data_hora,
-    [form],
-  )
+  function atender(a: Agendamento) {
+    navigate(`/administrativo/pacientes/${a.paciente_id}?tab=prontuario&agendamento=${a.id}`)
+  }
+
+  const podeSalvar = useMemo(() => {
+    const data = dataParte(form.data_hora)
+    const hora = horaParte(form.data_hora)
+    return Boolean(form.paciente_id && form.medico_id && form.tipo_procedimento_id && data && hora)
+  }, [form])
+
+  // Inclui o horário original do agendamento sendo editado mesmo que ele não caia certinho na
+  // grade de slots (ex.: foi criado antes de existir disponibilidade configurada) — assim
+  // editar não "perde" o horário original só por ele não ser um múltiplo do intervalo. Só vale
+  // enquanto a data no formulário ainda for a mesma do registro original: se o usuário mudar a
+  // data, esse horário antigo deixa de fazer sentido e não deve aparecer como opção.
+  const slotsParaExibir = useMemo(() => {
+    if (!disponibilidadeAgenda?.configurado) return []
+    const lista = [...disponibilidadeAgenda.slots]
+    if (editandoAgendamento && dataParte(form.data_hora) === dataParte(editandoAgendamento.data_hora)) {
+      const horaOriginal = horaParte(editandoAgendamento.data_hora)
+      if (horaOriginal && !lista.includes(horaOriginal)) lista.push(horaOriginal)
+    }
+    return lista.sort()
+  }, [disponibilidadeAgenda, editandoAgendamento, form.data_hora])
   const podeSalvarCompromisso = useMemo(
     () => formCompromisso.medico_id && formCompromisso.titulo.trim() && formCompromisso.data_hora,
     [formCompromisso],
@@ -400,7 +453,7 @@ export default function Agenda() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge tone={statusTom[item.agendamento.status]}>{item.agendamento.status}</Badge>
-                  {item.agendamento.status !== 'cancelado' && item.agendamento.status !== 'concluido' && (
+                  {item.agendamento.status !== 'cancelado' && item.agendamento.status !== 'concluido' && item.agendamento.status !== 'faltou' && (
                     <>
                       {ehMedico && (
                         <Button variant="secondary" onClick={() => atender(item.agendamento)}>
@@ -415,6 +468,11 @@ export default function Agenda() {
                       <Button variant="secondary" onClick={() => marcarConcluido(item.agendamento)}>
                         Concluir
                       </Button>
+                      {!ehMedico && (
+                        <Button variant="secondary" onClick={() => marcarFalta(item.agendamento)}>
+                          Marcar falta
+                        </Button>
+                      )}
                       <Button variant="danger" onClick={() => cancelar(item.agendamento)}>
                         Cancelar
                       </Button>
@@ -454,21 +512,17 @@ export default function Agenda() {
                 + Novo paciente
               </button>
             </div>
-            <Select value={form.paciente_id} onChange={(e) => setForm({ ...form, paciente_id: e.target.value })}>
-              <option value="">Selecione...</option>
-              {pacientes.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome}
-                </option>
-              ))}
-            </Select>
+            <SeletorPaciente pacientes={pacientes} value={form.paciente_id} onChange={(id) => setForm({ ...form, paciente_id: id })} />
             {pacientes.length === 0 && (
               <p className="text-xs text-amber-600 mt-1">Cadastre um paciente antes de agendar.</p>
             )}
           </div>
           <div>
             <Label>Médico</Label>
-            <Select value={form.medico_id} onChange={(e) => setForm({ ...form, medico_id: e.target.value })}>
+            <Select
+              value={form.medico_id}
+              onChange={(e) => setForm({ ...form, medico_id: e.target.value, data_hora: `${dataParte(form.data_hora)}T` })}
+            >
               <option value="">Selecione...</option>
               {medicos.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -501,11 +555,11 @@ export default function Agenda() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Data e hora</Label>
+              <Label>Data</Label>
               <Input
-                type="datetime-local"
-                value={form.data_hora}
-                onChange={(e) => setForm({ ...form, data_hora: e.target.value })}
+                type="date"
+                value={dataParte(form.data_hora)}
+                onChange={(e) => setForm({ ...form, data_hora: `${e.target.value}T` })}
               />
             </div>
             <div>
@@ -515,6 +569,41 @@ export default function Agenda() {
                 <option value="telemedicina">Telemedicina</option>
               </Select>
             </div>
+          </div>
+          <div>
+            <Label>Horário</Label>
+            {!form.medico_id || !dataParte(form.data_hora) ? (
+              <p className="text-xs text-slate-400">Selecione o médico e a data.</p>
+            ) : !disponibilidadeAgenda ? (
+              <p className="text-xs text-slate-400">Carregando horários...</p>
+            ) : !disponibilidadeAgenda.configurado ? (
+              <Input
+                type="time"
+                value={horaParte(form.data_hora)}
+                onChange={(e) => setForm({ ...form, data_hora: `${dataParte(form.data_hora)}T${e.target.value}` })}
+              />
+            ) : slotsParaExibir.length === 0 ? (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Esse médico não atende neste dia.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                {slotsParaExibir.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setForm({ ...form, data_hora: `${dataParte(form.data_hora)}T${s}` })}
+                    className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
+                      horaParte(form.data_hora) === s
+                        ? 'bg-brand-700 border-brand-700 text-white'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <Label>Observações</Label>

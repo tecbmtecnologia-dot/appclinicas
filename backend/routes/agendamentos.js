@@ -63,6 +63,64 @@ function horarioOcupado(clinicaId, medico_id, data_hora, ignorarAgendamentoId) {
   return Boolean(compromisso)
 }
 
+// Um médico sem nenhuma linha em medico_disponibilidade é tratado como "sem restrição
+// configurada" (agenda livre, comportamento de antes) — só passa a bloquear fora do horário
+// depois que alguém cadastra a disponibilidade dele em Médicos. Não vale pra `compromissos`:
+// esses servem justamente pra bloquear a agenda fora do expediente normal (plantão, cirurgia
+// externa), então não fazem sentido restritos à mesma janela de atendimento a pacientes.
+function dentroDaDisponibilidade(medico_id, data_hora) {
+  const totalConfigurado = db.prepare('SELECT COUNT(*) AS n FROM medico_disponibilidade WHERE medico_id = ?').get(medico_id).n
+  if (totalConfigurado === 0) return true
+  const data = data_hora.slice(0, 10)
+  const hora = data_hora.slice(11, 16)
+  const diaSemana = new Date(`${data}T00:00:00`).getDay()
+  const janelas = db
+    .prepare('SELECT hora_inicio, hora_fim FROM medico_disponibilidade WHERE medico_id = ? AND dia_semana = ?')
+    .all(medico_id, diaSemana)
+  return janelas.some((j) => hora >= j.hora_inicio && hora < j.hora_fim)
+}
+
+// Gera os horários de slot (ex.: 08:00, 08:30, ...) dentro das janelas de disponibilidade do
+// médico pro dia da semana de `data`, descontando os já ocupados por consulta ou compromisso.
+// Retorna `null` quando o médico não tem nenhuma disponibilidade configurada (agenda livre).
+function slotsDoDia(clinicaId, medico_id, data, ignorarAgendamentoId) {
+  const medico = db.prepare('SELECT intervalo_slot_minutos FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, clinicaId)
+  if (!medico) return []
+  const totalConfigurado = db.prepare('SELECT COUNT(*) AS n FROM medico_disponibilidade WHERE medico_id = ?').get(medico_id).n
+  if (totalConfigurado === 0) return null
+
+  const diaSemana = new Date(`${data}T00:00:00`).getDay()
+  const janelas = db
+    .prepare('SELECT hora_inicio, hora_fim FROM medico_disponibilidade WHERE medico_id = ? AND dia_semana = ?')
+    .all(medico_id, diaSemana)
+  if (janelas.length === 0) return []
+
+  const ocupados = new Set([
+    ...db
+      .prepare(
+        `SELECT substr(data_hora, 12, 5) AS hora FROM agendamentos WHERE clinica_id = ? AND medico_id = ? AND substr(data_hora, 1, 10) = ? AND status != 'cancelado' AND id != ?`,
+      )
+      .all(clinicaId, medico_id, data, ignorarAgendamentoId ?? '')
+      .map((r) => r.hora),
+    ...db
+      .prepare(`SELECT substr(data_hora, 12, 5) AS hora FROM compromissos WHERE clinica_id = ? AND medico_id = ? AND substr(data_hora, 1, 10) = ?`)
+      .all(clinicaId, medico_id, data)
+      .map((r) => r.hora),
+  ])
+
+  const passo = medico.intervalo_slot_minutos
+  const slots = []
+  for (const j of janelas) {
+    const [hi, mi] = j.hora_inicio.split(':').map(Number)
+    const [hf, mf] = j.hora_fim.split(':').map(Number)
+    for (let atual = hi * 60 + mi; atual + passo <= hf * 60 + mf; atual += passo) {
+      const horaStr = `${String(Math.floor(atual / 60)).padStart(2, '0')}:${String(atual % 60).padStart(2, '0')}`
+      if (!ocupados.has(horaStr)) slots.push(horaStr)
+    }
+  }
+  return slots.sort()
+}
+
 router.get('/', (req, res) => {
   const { data, mes, medico_id, paciente_id } = req.query
   let sql = SELECT_JOIN + ' WHERE a.clinica_id = ?'
@@ -88,6 +146,37 @@ router.get('/', (req, res) => {
   res.json(rows)
 })
 
+// Horários disponíveis pra marcar com um médico num dia específico — usado pelo seletor de
+// horário no formulário de agendamento. `configurado: false` significa que esse médico ainda
+// não tem disponibilidade cadastrada (o front cai de volta pro campo livre de data/hora).
+router.get('/disponibilidade', (req, res) => {
+  const { medico_id, data, ignorar_agendamento_id } = req.query
+  if (!medico_id || !data) return res.status(400).json({ error: 'medico_id e data são obrigatórios' })
+  const slots = slotsDoDia(req.usuario.clinica_id, medico_id, data, ignorar_agendamento_id)
+  if (slots === null) return res.json({ configurado: false, slots: [] })
+  res.json({ configurado: true, slots })
+})
+
+// Quais dias de um mês têm pelo menos um horário livre com o médico — usado pra sinalizar no
+// calendário quais dias dá pra agendar. `configurado: false` = médico sem restrição, calendário
+// não precisa desabilitar nenhum dia.
+router.get('/dias-disponiveis', (req, res) => {
+  const { medico_id, mes } = req.query
+  if (!medico_id || !mes) return res.status(400).json({ error: 'medico_id e mes são obrigatórios' })
+  const [ano, m] = mes.split('-').map(Number)
+  const totalDias = new Date(ano, m, 0).getDate()
+  const dias = []
+  let configurado = false
+  for (let d = 1; d <= totalDias; d++) {
+    const data = `${mes}-${String(d).padStart(2, '0')}`
+    const slots = slotsDoDia(req.usuario.clinica_id, medico_id, data)
+    if (slots === null) return res.json({ configurado: false, dias: [] })
+    configurado = true
+    if (slots.length > 0) dias.push(data)
+  }
+  res.json({ configurado, dias })
+})
+
 router.get('/:id', (req, res) => {
   const row = db.prepare(SELECT_JOIN + ' WHERE a.id = ? AND a.clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!row) return res.status(404).json({ error: 'Agendamento não encontrado' })
@@ -101,6 +190,9 @@ router.post('/', ESCRITA, (req, res) => {
   }
   if (!validarReferencias(req.usuario.clinica_id, paciente_id, medico_id)) {
     return res.status(400).json({ error: 'Paciente ou médico inválido' })
+  }
+  if (!dentroDaDisponibilidade(medico_id, data_hora)) {
+    return res.status(409).json({ error: 'Esse médico não atende nesse dia ou horário.' })
   }
   if (horarioOcupado(req.usuario.clinica_id, medico_id, data_hora)) {
     return res.status(409).json({ error: 'Esse médico já tem uma consulta ou compromisso marcado nesse horário.' })
@@ -135,8 +227,12 @@ router.put('/:id', ESCRITA, (req, res) => {
   if (!validarReferencias(req.usuario.clinica_id, merged.paciente_id, merged.medico_id)) {
     return res.status(400).json({ error: 'Paciente ou médico inválido' })
   }
+  const mudouHorarioOuMedico = merged.data_hora !== existente.data_hora || merged.medico_id !== existente.medico_id
+  if (mudouHorarioOuMedico && merged.status !== 'cancelado' && !dentroDaDisponibilidade(merged.medico_id, merged.data_hora)) {
+    return res.status(409).json({ error: 'Esse médico não atende nesse dia ou horário.' })
+  }
   if (
-    (merged.data_hora !== existente.data_hora || merged.medico_id !== existente.medico_id) &&
+    mudouHorarioOuMedico &&
     merged.status !== 'cancelado' &&
     horarioOcupado(req.usuario.clinica_id, merged.medico_id, merged.data_hora, req.params.id)
   ) {

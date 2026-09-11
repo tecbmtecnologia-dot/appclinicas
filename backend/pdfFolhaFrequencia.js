@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit'
-import { desenharMarcaDagua, desenharRodapeContato, formatarData } from './pdfDocumentoBase.js'
+import { desenharCabecalhoLogo, desenharFaixaSecao, desenharMarcaDagua, desenharRodapeContato, formatarData, registrarFontes } from './pdfDocumentoBase.js'
 
 function formatarHoras(h) {
   if (h == null) return '—'
@@ -30,7 +30,7 @@ const LARGURA_TOTAL = COLUNAS.reduce((s, c) => s + c.largura, 0)
 function desenharCabecalhoTabela(doc) {
   let x = MARGEM_ESQUERDA
   const y = doc.y
-  doc.font('Helvetica-Bold').fontSize(8).fillColor('#555')
+  doc.font('Jakarta-Bold').fontSize(8).fillColor('#555')
   COLUNAS.forEach((c) => {
     doc.text(c.titulo, x, y, { width: c.largura })
     x += c.largura
@@ -46,27 +46,27 @@ export function gerarFolhaFrequenciaPDF(res, { clinica, periodo, funcionarios })
   res.setHeader('Content-Type', 'application/pdf')
   res.setHeader('Content-Disposition', `inline; filename="folha-frequencia-${periodo.inicio}_a_${periodo.fim}.pdf"`)
   doc.pipe(res)
+  registrarFontes(doc)
 
   doc.on('pageAdded', () => desenharMarcaDagua(doc, clinica))
   desenharMarcaDagua(doc, clinica)
 
-  doc.fontSize(15).font('Helvetica-Bold').text(clinica?.nome ?? 'Clínica', { align: 'left' })
-  doc.fontSize(13).font('Helvetica-Bold').text('Folha de Frequência', { align: 'center' })
+  const paleta = desenharCabecalhoLogo(doc, clinica, 'Folha de Frequência')
   doc
     .fontSize(10)
-    .font('Helvetica')
+    .font('Jakarta')
     .fillColor('#555')
     .text(`Período: ${formatarData(periodo.inicio)} a ${formatarData(periodo.fim)}`, { align: 'center' })
   doc.fillColor('#000')
-  doc.moveDown(1.2)
+  doc.moveDown(0.8)
 
   funcionarios.forEach((f, idx) => {
     if (idx > 0) doc.addPage()
 
-    doc.fontSize(12).font('Helvetica-Bold').text(f.nome)
+    desenharFaixaSecao(doc, paleta, f.nome)
     doc
       .fontSize(9)
-      .font('Helvetica')
+      .font('Jakarta')
       .fillColor('#555')
       .text(
         f.jornada
@@ -76,7 +76,7 @@ export function gerarFolhaFrequenciaPDF(res, { clinica, periodo, funcionarios })
           : 'Jornada não cadastrada — saldo diário não calculado',
       )
     doc.fillColor('#000')
-    doc.moveDown(0.5)
+    doc.moveDown(0.3)
 
     desenharCabecalhoTabela(doc)
 
@@ -85,7 +85,7 @@ export function gerarFolhaFrequenciaPDF(res, { clinica, periodo, funcionarios })
     let totalNegativo = 0
 
     if (f.dias.length === 0) {
-      doc.font('Helvetica').fontSize(9).fillColor('#999').text('Nenhuma marcação de ponto neste período.')
+      doc.font('Jakarta').fontSize(9).fillColor('#999').text('Nenhuma marcação de ponto neste período.')
       doc.fillColor('#000')
     }
 
@@ -97,7 +97,7 @@ export function gerarFolhaFrequenciaPDF(res, { clinica, periodo, funcionarios })
 
       let x = MARGEM_ESQUERDA
       const y = doc.y
-      doc.font('Helvetica').fontSize(8)
+      doc.font('Jakarta').fontSize(8)
       const valores = [
         formatarData(d.data),
         horaCurta(d.entrada),
@@ -126,7 +126,7 @@ export function gerarFolhaFrequenciaPDF(res, { clinica, periodo, funcionarios })
     doc.moveTo(MARGEM_ESQUERDA, doc.y).lineTo(MARGEM_ESQUERDA + LARGURA_TOTAL, doc.y).strokeColor('#ddd').stroke()
     doc.moveDown(0.4)
 
-    doc.font('Helvetica-Bold').fontSize(9)
+    doc.font('Jakarta-Bold').fontSize(9)
     doc.text(`Total trabalhado no período: ${formatarHoras(totalTrabalhado)}`)
     doc.fillColor('#15803d').text(`Horas positivas (saldo a favor): ${formatarHoras(totalPositivo)}`)
     doc.fillColor('#b91c1c').text(`Horas negativas (saldo devedor): ${formatarHoras(totalNegativo)}`)

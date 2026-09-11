@@ -7,6 +7,26 @@ import type { Hospital, Medico } from '../../types'
 
 const vazio: MedicoForm = { nome: '', crm: '', especialidade: '', telefone: '', email: '', hospitais: [] }
 
+const DIAS_SEMANA_LABELS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+
+interface DiaDisponibilidadeForm {
+  ativo: boolean
+  hora_inicio: string
+  hora_fim: string
+}
+
+function disponibilidadeVazia(): DiaDisponibilidadeForm[] {
+  return DIAS_SEMANA_LABELS.map(() => ({ ativo: false, hora_inicio: '08:00', hora_fim: '18:00' }))
+}
+
+function paraFormulario(disponibilidade: Medico['disponibilidade']): DiaDisponibilidadeForm[] {
+  const dias = disponibilidadeVazia()
+  for (const d of disponibilidade) {
+    dias[d.dia_semana] = { ativo: true, hora_inicio: d.hora_inicio, hora_fim: d.hora_fim }
+  }
+  return dias
+}
+
 export default function Medicos() {
   const [medicos, setMedicos] = useState<Medico[]>([])
   const [hospitais, setHospitais] = useState<Hospital[]>([])
@@ -14,6 +34,8 @@ export default function Medicos() {
   const [modalAberto, setModalAberto] = useState(false)
   const [editando, setEditando] = useState<Medico | null>(null)
   const [form, setForm] = useState<MedicoForm>(vazio)
+  const [disponibilidade, setDisponibilidade] = useState<DiaDisponibilidadeForm[]>(disponibilidadeVazia())
+  const [intervaloSlot, setIntervaloSlot] = useState(30)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -33,6 +55,8 @@ export default function Medicos() {
   function abrirNovo() {
     setEditando(null)
     setForm(vazio)
+    setDisponibilidade(disponibilidadeVazia())
+    setIntervaloSlot(30)
     setModalAberto(true)
   }
 
@@ -46,7 +70,17 @@ export default function Medicos() {
       email: m.email,
       hospitais: m.hospitais.map((h) => h.id),
     })
+    setDisponibilidade(paraFormulario(m.disponibilidade ?? []))
+    setIntervaloSlot(m.intervalo_slot_minutos ?? 30)
     setModalAberto(true)
+  }
+
+  function alternarDia(dia: number) {
+    setDisponibilidade((atual) => atual.map((d, i) => (i === dia ? { ...d, ativo: !d.ativo } : d)))
+  }
+
+  function atualizarHorarioDia(dia: number, campo: 'hora_inicio' | 'hora_fim', valor: string) {
+    setDisponibilidade((atual) => atual.map((d, i) => (i === dia ? { ...d, [campo]: valor } : d)))
   }
 
   function alternarHospital(id: string) {
@@ -59,10 +93,18 @@ export default function Medicos() {
   async function salvar() {
     setSalvando(true)
     try {
+      const dados: MedicoForm = {
+        ...form,
+        intervalo_slot_minutos: intervaloSlot,
+        disponibilidade: disponibilidade
+          .map((d, dia_semana) => ({ ...d, dia_semana }))
+          .filter((d) => d.ativo)
+          .map(({ dia_semana, hora_inicio, hora_fim }) => ({ dia_semana, hora_inicio, hora_fim })),
+      }
       if (editando) {
-        await medicosApi.atualizar(editando.id, form)
+        await medicosApi.atualizar(editando.id, dados)
       } else {
-        await medicosApi.criar(form)
+        await medicosApi.criar(dados)
       }
       setModalAberto(false)
       carregar()
@@ -172,6 +214,58 @@ export default function Medicos() {
                 ))}
               </div>
             )}
+          </div>
+          <div>
+            <div className="flex items-center justify-between">
+              <Label>Disponibilidade para agendamento</Label>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                Horários de
+                <input
+                  type="number"
+                  min={5}
+                  step={5}
+                  value={intervaloSlot}
+                  onChange={(e) => setIntervaloSlot(Math.max(5, Number(e.target.value) || 30))}
+                  className="w-14 rounded-lg border border-slate-300 px-1.5 py-0.5 text-center text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500"
+                />
+                em {intervaloSlot} min
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Marque os dias em que o médico atende. Se nenhum dia for marcado, a agenda fica livre (sem restrição de horário).
+            </p>
+            <div className="space-y-1.5">
+              {DIAS_SEMANA_LABELS.map((label, dia) => {
+                const d = disponibilidade[dia]
+                return (
+                  <div key={label} className="flex items-center gap-2 text-sm">
+                    <label className="flex items-center gap-2 w-28 shrink-0 cursor-pointer">
+                      <input type="checkbox" checked={d.ativo} onChange={() => alternarDia(dia)} />
+                      {label}
+                    </label>
+                    {d.ativo ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="time"
+                          value={d.hora_inicio}
+                          onChange={(e) => atualizarHorarioDia(dia, 'hora_inicio', e.target.value)}
+                          className="rounded-lg border border-slate-300 px-2 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500"
+                        />
+                        <span className="text-slate-400">às</span>
+                        <input
+                          type="time"
+                          value={d.hora_fim}
+                          onChange={(e) => atualizarHorarioDia(dia, 'hora_fim', e.target.value)}
+                          className="rounded-lg border border-slate-300 px-2 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500"
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-slate-300">Não atende</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setModalAberto(false)}>

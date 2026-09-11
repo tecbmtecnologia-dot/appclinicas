@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Printer } from 'lucide-react'
-import { Card, EmptyState, Label, PageHeader, Select } from '../../components/ui'
+import { Card, EmptyState, Label, PageHeader } from '../../components/ui'
+import { SeletorPaciente } from '../../components/SeletorPaciente'
 import { pacientesApi } from '../../api/pacientes'
 import { prontuariosApi } from '../../api/prontuarios'
 import type { Paciente, ReceitaResumo } from '../../types'
@@ -39,14 +40,7 @@ export default function Receitas() {
 
       <Card className="p-4 mb-6 max-w-md">
         <Label>Paciente</Label>
-        <Select value={pacienteId} onChange={(e) => setPacienteId(e.target.value)}>
-          <option value="">Selecione um paciente...</option>
-          {pacientes.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nome}
-            </option>
-          ))}
-        </Select>
+        <SeletorPaciente pacientes={pacientes} value={pacienteId} onChange={setPacienteId} />
       </Card>
 
       {!pacienteId ? (

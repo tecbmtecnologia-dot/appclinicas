@@ -10,6 +10,7 @@ export interface CirurgiaForm {
   local_hospital?: string | null
   equipe?: string | null
   observacoes?: string | null
+  observacoes_financeiras?: string | null
   auxiliares?: string[]
   itens?: { item_id: string; quantidade: number }[]
 }

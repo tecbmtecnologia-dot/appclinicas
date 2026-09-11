@@ -19,6 +19,16 @@ function buildQuery(filtro?: FiltroAgendamentos) {
   return qs ? `?${qs}` : ''
 }
 
+export interface DisponibilidadeDia {
+  configurado: boolean
+  slots: string[]
+}
+
+export interface DiasDisponiveisMes {
+  configurado: boolean
+  dias: string[]
+}
+
 export const agendamentosApi = {
   listar: (filtro?: FiltroAgendamentos) =>
     api.get<Agendamento[]>(`/agendamentos${buildQuery(filtro)}`),
@@ -30,4 +40,11 @@ export const agendamentosApi = {
   cancelar: (id: string) =>
     api.put<Agendamento>(`/agendamentos/${id}`, { status: 'cancelado' }),
   remover: (id: string) => api.del<void>(`/agendamentos/${id}`),
+  disponibilidade: (medico_id: string, data: string, ignorarAgendamentoId?: string) => {
+    const params = new URLSearchParams({ medico_id, data })
+    if (ignorarAgendamentoId) params.set('ignorar_agendamento_id', ignorarAgendamentoId)
+    return api.get<DisponibilidadeDia>(`/agendamentos/disponibilidade?${params.toString()}`)
+  },
+  diasDisponiveis: (medico_id: string, mes: string) =>
+    api.get<DiasDisponiveisMes>(`/agendamentos/dias-disponiveis?${new URLSearchParams({ medico_id, mes }).toString()}`),
 }

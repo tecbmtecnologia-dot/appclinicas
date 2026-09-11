@@ -10,7 +10,7 @@ function referenciaAtual() {
   return new Date().toISOString().slice(0, 7)
 }
 
-function montarReferencia(mes, ano) {
+export function montarReferencia(mes, ano) {
   return mes && ano ? `${ano}-${String(mes).padStart(2, '0')}` : referenciaAtual()
 }
 
@@ -18,7 +18,7 @@ function montarReferencia(mes, ano) {
 // negociados caso a caso por cirurgia em que a pessoa participou (instrumentação etc.).
 // O mês de competência do procedimento usa a data prevista da cirurgia; se não houver,
 // cai para a data em que a participação foi lançada.
-function calcularComissao(clinicaId, usuarioId, referencia) {
+export function calcularComissao(clinicaId, usuarioId, referencia) {
   const config = db.prepare('SELECT valor_fixo_mensal FROM comissoes_config WHERE usuario_id = ?').get(usuarioId)
   const valorFixoMensal = config?.valor_fixo_mensal ?? 0
 
@@ -59,8 +59,7 @@ router.get('/minhas', (req, res) => {
   res.json({ referencia, ...calcularComissao(req.usuario.clinica_id, req.usuario.id, referencia) })
 })
 
-router.get('/', GESTAO, (req, res) => {
-  const referencia = montarReferencia(req.query.mes, req.query.ano)
+export function resumoComissoesClinica(clinicaId, referencia) {
   const usuarios = db
     .prepare(
       `SELECT DISTINCT u.id, u.nome, u.role
@@ -77,16 +76,19 @@ router.get('/', GESTAO, (req, res) => {
          )
        ORDER BY u.nome COLLATE NOCASE`,
     )
-    .all(referencia, req.usuario.clinica_id, referencia)
+    .all(referencia, clinicaId, referencia)
 
-  const resumo = usuarios.map((u) => ({
+  return usuarios.map((u) => ({
     usuario_id: u.id,
     usuario_nome: u.nome,
     role: u.role,
-    ...calcularComissao(req.usuario.clinica_id, u.id, referencia),
+    ...calcularComissao(clinicaId, u.id, referencia),
   }))
+}
 
-  res.json({ referencia, resumo })
+router.get('/', GESTAO, (req, res) => {
+  const referencia = montarReferencia(req.query.mes, req.query.ano)
+  res.json({ referencia, resumo: resumoComissoesClinica(req.usuario.clinica_id, referencia) })
 })
 
 router.get('/todas-comissionadas', GESTAO, (req, res) => {

@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Medico } from '../types'
+import type { DisponibilidadeMedico, Medico } from '../types'
 
 export interface MedicoForm {
   nome: string
@@ -8,6 +8,8 @@ export interface MedicoForm {
   telefone: string
   email: string
   hospitais?: string[]
+  disponibilidade?: Pick<DisponibilidadeMedico, 'dia_semana' | 'hora_inicio' | 'hora_fim'>[]
+  intervalo_slot_minutos?: number
 }
 
 export const medicosApi = {

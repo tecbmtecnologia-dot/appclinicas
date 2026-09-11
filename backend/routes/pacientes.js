@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid'
 import { db } from '../db.js'
 import { requireRole } from '../auth.js'
 import { uploadFotoPaciente } from '../upload.js'
+import { gerarEtiquetaPacientePDF } from '../pdfEtiquetaPaciente.js'
+import { gerarPulseiraPapelPDF, gerarPulseiraTermicaPDF } from '../pdfPulseiraPaciente.js'
 
 const router = Router()
 const ESCRITA = requireRole('admin', 'coordenador', 'recepcao')
@@ -10,6 +12,7 @@ const EXCLUSAO = requireRole('admin', 'coordenador', 'recepcao')
 
 const CAMPOS_BASE = ['nome', 'cpf', 'rg', 'data_nascimento', 'telefone', 'email', 'convenio', 'endereco']
 const CAMPOS_EXTRA = [
+  'sexo',
   'cep',
   'logradouro',
   'numero',
@@ -20,6 +23,7 @@ const CAMPOS_EXTRA = [
   'estado_civil',
   'data_primeira_consulta',
   'nome_responsavel',
+  'nome_mae',
   'profissao',
   'cor_raca',
   'peso_kg',
@@ -46,6 +50,25 @@ router.get('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!row) return res.status(404).json({ error: 'Paciente não encontrado' })
   res.json(row)
+})
+
+router.get('/:id/etiqueta.pdf', (req, res) => {
+  const paciente = db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+  if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
+  gerarEtiquetaPacientePDF(res, { paciente })
+})
+
+router.get('/:id/pulseira-papel.pdf', (req, res) => {
+  const paciente = db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+  if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
+  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  gerarPulseiraPapelPDF(res, { paciente, clinica })
+})
+
+router.get('/:id/pulseira-termica.pdf', (req, res) => {
+  const paciente = db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+  if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
+  gerarPulseiraTermicaPDF(res, { paciente })
 })
 
 router.post('/', ESCRITA, (req, res) => {

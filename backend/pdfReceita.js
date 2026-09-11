@@ -1,25 +1,21 @@
 import PDFDocument from 'pdfkit'
-import { desenharMarcaDagua, desenharRodapeContato, formatarData } from './pdfDocumentoBase.js'
+import { desenharCabecalhoLogo, desenharMarcaDagua, desenharRodapeContato, formatarData, registrarFontes } from './pdfDocumentoBase.js'
 
 export function gerarReceitaPDF(res, { prontuario, paciente, medico, clinica }) {
   const doc = new PDFDocument({ margin: 50 })
   res.setHeader('Content-Type', 'application/pdf')
   res.setHeader('Content-Disposition', `inline; filename="receita-${prontuario.id}.pdf"`)
   doc.pipe(res)
+  registrarFontes(doc)
 
   desenharMarcaDagua(doc, clinica)
 
-  doc.fontSize(15).font('Helvetica-Bold').text(clinica?.nome ?? 'Clínica', { align: 'center' })
-  if (clinica?.cnpj) doc.fontSize(9).font('Helvetica').fillColor('#555').text(`CNPJ: ${clinica.cnpj}`, { align: 'center' })
-  doc.fillColor('#000')
-  doc.moveDown(1.2)
-
-  doc.fontSize(14).font('Helvetica-Bold').text('Receita Médica', { align: 'center' })
-  doc.moveDown(1.5)
+  desenharCabecalhoLogo(doc, clinica, 'Receita Médica')
+  doc.moveDown(0.5)
 
   function linha(rotulo, valor) {
-    doc.font('Helvetica-Bold').fontSize(10).text(rotulo, { continued: true })
-    doc.font('Helvetica').text(`  ${valor || '—'}`)
+    doc.font('Jakarta-Bold').fontSize(10).text(rotulo, { continued: true })
+    doc.font('Jakarta').text(`  ${valor || '—'}`)
   }
 
   linha('Paciente:', paciente?.nome)
@@ -27,9 +23,9 @@ export function gerarReceitaPDF(res, { prontuario, paciente, medico, clinica }) 
   linha('Data:', formatarData(prontuario.data))
   doc.moveDown(1.2)
 
-  doc.font('Helvetica-Bold').fontSize(11).text('Prescrição')
+  doc.font('Jakarta-Bold').fontSize(11).text('Prescrição')
   doc.moveDown(0.4)
-  doc.font('Helvetica').fontSize(11).text(prontuario.prescricao || '—', { lineGap: 4 })
+  doc.font('Jakarta').fontSize(11).text(prontuario.prescricao || '—', { lineGap: 4 })
   doc.moveDown(3)
 
   const larguraAssinatura = 240
@@ -40,7 +36,7 @@ export function gerarReceitaPDF(res, { prontuario, paciente, medico, clinica }) 
     .lineTo(xAssinatura + larguraAssinatura, yAssinatura)
     .strokeColor('#999')
     .stroke()
-  doc.fontSize(10).font('Helvetica').text(medico?.nome ? `Dr(a). ${medico.nome}` : '', xAssinatura, yAssinatura + 4, {
+  doc.fontSize(10).font('Jakarta').text(medico?.nome ? `Dr(a). ${medico.nome}` : '', xAssinatura, yAssinatura + 4, {
     width: larguraAssinatura,
     align: 'center',
   })
