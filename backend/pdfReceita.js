@@ -1,5 +1,12 @@
 import PDFDocument from 'pdfkit'
-import { desenharCabecalhoLogo, desenharMarcaDagua, desenharRodapeContato, formatarData, registrarFontes } from './pdfDocumentoBase.js'
+import {
+  desenharAssinaturaMedico,
+  desenharCabecalhoLogo,
+  desenharMarcaDagua,
+  desenharRodapeContato,
+  formatarData,
+  registrarFontes,
+} from './pdfDocumentoBase.js'
 
 export function gerarReceitaPDF(res, { prontuario, paciente, medico, clinica }) {
   const doc = new PDFDocument({ margin: 50 })
@@ -26,25 +33,8 @@ export function gerarReceitaPDF(res, { prontuario, paciente, medico, clinica }) 
   doc.font('Jakarta-Bold').fontSize(11).text('Prescrição')
   doc.moveDown(0.4)
   doc.font('Jakarta').fontSize(11).text(prontuario.prescricao || '—', { lineGap: 4 })
-  doc.moveDown(3)
 
-  const larguraAssinatura = 240
-  const xAssinatura = (doc.page.width - larguraAssinatura) / 2
-  const yAssinatura = doc.y
-  doc
-    .moveTo(xAssinatura, yAssinatura)
-    .lineTo(xAssinatura + larguraAssinatura, yAssinatura)
-    .strokeColor('#999')
-    .stroke()
-  doc.fontSize(10).font('Jakarta').text(medico?.nome ? `Dr(a). ${medico.nome}` : '', xAssinatura, yAssinatura + 4, {
-    width: larguraAssinatura,
-    align: 'center',
-  })
-  if (medico?.crm) {
-    doc.fontSize(9).fillColor('#555').text(`CRM: ${medico.crm}`, xAssinatura, doc.y, { width: larguraAssinatura, align: 'center' })
-    doc.fillColor('#000')
-  }
-
+  desenharAssinaturaMedico(doc, medico)
   desenharRodapeContato(doc, clinica)
 
   doc.end()

@@ -5,9 +5,18 @@ import { comissoesApi } from '../../api/comissoes'
 import { cirurgiasApi } from '../../api/cirurgias'
 import { useAuth } from '../../contexts/AuthContext'
 import { ApiError } from '../../api/client'
-import type { Cirurgia, ComissaoAvulsa, MinhaComissao, ResumoComissoes, Usuario } from '../../types'
+import type {
+  Cirurgia,
+  ComissaoAvulsa,
+  ComissaoExtra,
+  MinhaComissao,
+  ParticipanteCirurgiaComissao,
+  ResumoComissoes,
+  StatusComissaoAvulsa,
+  Usuario,
+} from '../../types'
 
-function statusAvulsaTone(status: ComissaoAvulsa['status']) {
+function statusAvulsaTone(status: StatusComissaoAvulsa) {
   return status === 'aprovada' ? 'green' : status === 'recusada' ? 'red' : 'amber'
 }
 
@@ -15,6 +24,12 @@ const vazioAvulsa = {
   data: new Date().toISOString().slice(0, 10),
   paciente_nome: '',
   nome_cirurgia: '',
+  descricao: '',
+  valor: 0,
+}
+
+const vazioExtra = {
+  data: new Date().toISOString().slice(0, 10),
   descricao: '',
   valor: 0,
 }
@@ -77,19 +92,233 @@ function SeletorMesAno({
 export default function Comissoes() {
   const { usuario } = useAuth()
   const podeGerenciar = usuario?.role === 'admin' || usuario?.role === 'financeiro'
+  const podeAprovarParticipantes = usuario?.role === 'coordenador'
   return (
     <div>
       <PageHeader
         title="Comissões"
-        subtitle={podeGerenciar ? 'Valor fixo mensal + valor combinado por procedimento cirúrgico' : 'Sua comissão do mês'}
+        subtitle={
+          podeGerenciar
+            ? 'Valor fixo mensal + valor combinado por procedimento cirúrgico'
+            : podeAprovarParticipantes
+              ? 'Aprovação das comissões de cirurgia lançadas por consultoras/fisioterapeutas'
+              : 'Sua comissão do mês'
+        }
         icon={HandCoins}
       />
-      {podeGerenciar ? <ComissoesGestao /> : <MinhaComissaoView />}
+      {podeGerenciar ? <ComissoesGestao /> : podeAprovarParticipantes ? <AprovacaoParticipantesView /> : <MinhaComissaoView />}
+    </div>
+  )
+}
+
+function AprovacaoParticipantesView() {
+  const [pendentes, setPendentes] = useState<ParticipanteCirurgiaComissao[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [edicoes, setEdicoes] = useState<Record<string, { valor: string; observacao: string }>>({})
+  const [processando, setProcessando] = useState<string | null>(null)
+
+  function carregar() {
+    setCarregando(true)
+    comissoesApi
+      .participantesPendentes()
+      .then((rows) => {
+        setPendentes(rows)
+        setEdicoes(Object.fromEntries(rows.map((r) => [r.id, { valor: String(r.valor_comissao), observacao: r.observacao ?? '' }])))
+      })
+      .finally(() => setCarregando(false))
+  }
+
+  useEffect(carregar, [])
+
+  async function aprovar(p: ParticipanteCirurgiaComissao) {
+    setProcessando(p.id)
+    try {
+      const edicao = edicoes[p.id]
+      await comissoesApi.aprovarParticipante(p.id, { valor_comissao: Number(edicao?.valor) || 0, observacao: edicao?.observacao })
+      carregar()
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Erro ao aprovar.')
+    } finally {
+      setProcessando(null)
+    }
+  }
+
+  async function recusar(p: ParticipanteCirurgiaComissao) {
+    if (!confirm(`Recusar a comissão lançada por ${p.usuario_nome}?`)) return
+    setProcessando(p.id)
+    try {
+      const edicao = edicoes[p.id]
+      await comissoesApi.recusarParticipante(p.id, edicao?.observacao)
+      carregar()
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Erro ao recusar.')
+    } finally {
+      setProcessando(null)
+    }
+  }
+
+  const [extras, setExtras] = useState<ComissaoExtra[]>([])
+  const [carregandoExtras, setCarregandoExtras] = useState(true)
+  const [edicoesExtra, setEdicoesExtra] = useState<Record<string, { valor: string; observacao: string }>>({})
+  const [processandoExtra, setProcessandoExtra] = useState<string | null>(null)
+
+  function carregarExtras() {
+    setCarregandoExtras(true)
+    comissoesApi.extras
+      .pendentes()
+      .then((rows) => {
+        setExtras(rows)
+        setEdicoesExtra(Object.fromEntries(rows.map((r) => [r.id, { valor: String(r.valor), observacao: r.observacao_aprovacao ?? '' }])))
+      })
+      .finally(() => setCarregandoExtras(false))
+  }
+
+  useEffect(carregarExtras, [])
+
+  async function aprovarExtra(e: ComissaoExtra) {
+    setProcessandoExtra(e.id)
+    try {
+      const edicao = edicoesExtra[e.id]
+      await comissoesApi.extras.aprovar(e.id, { valor: Number(edicao?.valor) || 0, observacao: edicao?.observacao })
+      carregarExtras()
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Erro ao aprovar.')
+    } finally {
+      setProcessandoExtra(null)
+    }
+  }
+
+  async function recusarExtra(e: ComissaoExtra) {
+    if (!confirm(`Recusar o extra lançado por ${e.usuario_nome}?`)) return
+    setProcessandoExtra(e.id)
+    try {
+      const edicao = edicoesExtra[e.id]
+      await comissoesApi.extras.recusar(e.id, edicao?.observacao)
+      carregarExtras()
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Erro ao recusar.')
+    } finally {
+      setProcessandoExtra(null)
+    }
+  }
+
+  return (
+    <div>
+      <h2 className="font-semibold text-slate-800 mb-1">Comissões de cirurgia pendentes de aprovação</h2>
+      <p className="text-xs text-slate-400 mb-4">
+        Lançadas pela própria consultora/fisioterapeuta ao vincular a participação numa cirurgia. Ajuste o valor final e adicione uma
+        anotação se precisar antes de aprovar — o que for aprovado aqui é o que entra no total da comissão dela.
+      </p>
+      {carregando ? (
+        <p className="text-sm text-slate-400">Carregando...</p>
+      ) : pendentes.length === 0 ? (
+        <EmptyState text="Nenhuma comissão de cirurgia pendente no momento." />
+      ) : (
+        <div className="space-y-3">
+          {pendentes.map((p) => (
+            <Card key={p.id} className="p-4 space-y-3 max-w-2xl">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium text-slate-800">
+                    {p.usuario_nome} — {p.nome_cirurgia}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {p.paciente_nome ? `${p.paciente_nome} · ` : ''}
+                    {formatarData(p.data_prevista)}
+                  </p>
+                </div>
+                <Badge tone="amber">pendente</Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Valor final da comissão</Label>
+                  <Input
+                    type="number"
+                    value={edicoes[p.id]?.valor ?? ''}
+                    onChange={(e) => setEdicoes({ ...edicoes, [p.id]: { ...edicoes[p.id], valor: e.target.value } })}
+                  />
+                </div>
+                <div>
+                  <Label>Anotação (opcional)</Label>
+                  <Input
+                    placeholder="Ex: valor ajustado por combinar direto com o médico"
+                    value={edicoes[p.id]?.observacao ?? ''}
+                    onChange={(e) => setEdicoes({ ...edicoes, [p.id]: { ...edicoes[p.id], observacao: e.target.value } })}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="danger" disabled={processando === p.id} onClick={() => recusar(p)}>
+                  Recusar
+                </Button>
+                <Button variant="secondary" disabled={processando === p.id} onClick={() => aprovar(p)}>
+                  {processando === p.id ? 'Salvando...' : 'Aprovar'}
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <h2 className="font-semibold text-slate-800 mb-1 mt-6">Extras (condução, reembolsos) pendentes de aprovação</h2>
+      <p className="text-xs text-slate-400 mb-4">
+        Valores extras que a própria pessoa lançou (ex: condução/Uber), sem ligação a um paciente ou cirurgia específica.
+      </p>
+      {carregandoExtras ? (
+        <p className="text-sm text-slate-400">Carregando...</p>
+      ) : extras.length === 0 ? (
+        <EmptyState text="Nenhum extra pendente no momento." />
+      ) : (
+        <div className="space-y-3">
+          {extras.map((e) => (
+            <Card key={e.id} className="p-4 space-y-3 max-w-2xl">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium text-slate-800">
+                    {e.usuario_nome} — {e.descricao}
+                  </p>
+                  <p className="text-xs text-slate-400">{formatarData(e.data)}</p>
+                </div>
+                <Badge tone="amber">pendente</Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Valor final</Label>
+                  <Input
+                    type="number"
+                    value={edicoesExtra[e.id]?.valor ?? ''}
+                    onChange={(ev) => setEdicoesExtra({ ...edicoesExtra, [e.id]: { ...edicoesExtra[e.id], valor: ev.target.value } })}
+                  />
+                </div>
+                <div>
+                  <Label>Anotação (opcional)</Label>
+                  <Input
+                    value={edicoesExtra[e.id]?.observacao ?? ''}
+                    onChange={(ev) =>
+                      setEdicoesExtra({ ...edicoesExtra, [e.id]: { ...edicoesExtra[e.id], observacao: ev.target.value } })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="danger" disabled={processandoExtra === e.id} onClick={() => recusarExtra(e)}>
+                  Recusar
+                </Button>
+                <Button variant="secondary" disabled={processandoExtra === e.id} onClick={() => aprovarExtra(e)}>
+                  {processandoExtra === e.id ? 'Salvando...' : 'Aprovar'}
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
 function MinhaComissaoView() {
+  const { usuario } = useAuth()
+  const ehPj = usuario?.role === 'pj'
   const agora = new Date()
   const [mes, setMes] = useState(agora.getMonth() + 1)
   const [ano, setAno] = useState(agora.getFullYear())
@@ -100,6 +329,17 @@ function MinhaComissaoView() {
   const [salvandoAvulsa, setSalvandoAvulsa] = useState(false)
   const [erroAvulsa, setErroAvulsa] = useState<string | null>(null)
 
+  const [formExtra, setFormExtra] = useState(vazioExtra)
+  const [editandoExtra, setEditandoExtra] = useState<ComissaoExtra | null>(null)
+  const [salvandoExtra, setSalvandoExtra] = useState(false)
+  const [erroExtra, setErroExtra] = useState<string | null>(null)
+
+  const [cirurgias, setCirurgias] = useState<Cirurgia[]>([])
+  const [formParticipacao, setFormParticipacao] = useState({ cirurgia_id: '', valor_comissao: 0 })
+  const [salvandoParticipacao, setSalvandoParticipacao] = useState(false)
+  const [erroParticipacao, setErroParticipacao] = useState<string | null>(null)
+  const [removendoParticipacao, setRemovendoParticipacao] = useState<string | null>(null)
+
   function carregar() {
     setCarregando(true)
     comissoesApi
@@ -109,6 +349,37 @@ function MinhaComissaoView() {
   }
 
   useEffect(carregar, [mes, ano])
+
+  useEffect(() => {
+    if (ehPj) cirurgiasApi.listar().then(setCirurgias).catch(() => {})
+  }, [ehPj])
+
+  async function vincularParticipacao() {
+    setSalvandoParticipacao(true)
+    setErroParticipacao(null)
+    try {
+      await comissoesApi.adicionarParticipante(formParticipacao)
+      setFormParticipacao({ cirurgia_id: '', valor_comissao: 0 })
+      carregar()
+    } catch (err) {
+      setErroParticipacao(err instanceof ApiError ? err.message : 'Erro ao vincular participação.')
+    } finally {
+      setSalvandoParticipacao(false)
+    }
+  }
+
+  async function removerParticipacao(id: string) {
+    if (!confirm('Remover este lançamento?')) return
+    setRemovendoParticipacao(id)
+    try {
+      await comissoesApi.removerMinhaParticipante(id)
+      carregar()
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Erro ao remover lançamento.')
+    } finally {
+      setRemovendoParticipacao(null)
+    }
+  }
 
   function abrirEdicaoAvulsa(a: ComissaoAvulsa) {
     setEditandoAvulsa(a)
@@ -152,6 +423,42 @@ function MinhaComissaoView() {
     carregar()
   }
 
+  function abrirEdicaoExtra(e: ComissaoExtra) {
+    setEditandoExtra(e)
+    setFormExtra({ data: e.data, descricao: e.descricao, valor: e.valor })
+    setErroExtra(null)
+  }
+
+  function cancelarEdicaoExtra() {
+    setEditandoExtra(null)
+    setFormExtra(vazioExtra)
+    setErroExtra(null)
+  }
+
+  async function salvarExtra() {
+    setSalvandoExtra(true)
+    setErroExtra(null)
+    try {
+      if (editandoExtra) {
+        await comissoesApi.extras.atualizar(editandoExtra.id, formExtra)
+      } else {
+        await comissoesApi.extras.criar(formExtra)
+      }
+      cancelarEdicaoExtra()
+      carregar()
+    } catch (err) {
+      setErroExtra(err instanceof ApiError ? err.message : 'Erro ao salvar lançamento.')
+    } finally {
+      setSalvandoExtra(false)
+    }
+  }
+
+  async function removerExtra(e: ComissaoExtra) {
+    if (!confirm(`Remover o lançamento de "${e.descricao}"?`)) return
+    await comissoesApi.extras.remover(e.id)
+    carregar()
+  }
+
   return (
     <div>
       <SeletorMesAno mes={mes} ano={ano} onMes={setMes} onAno={setAno} />
@@ -159,7 +466,7 @@ function MinhaComissaoView() {
         <p className="text-sm text-slate-400">Carregando...</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
             <Card className="p-4">
               <p className="text-xs text-slate-400 mb-1">Valor fixo mensal</p>
               <p className="text-xl font-bold text-slate-800">{moeda(dados.valor_fixo_mensal)}</p>
@@ -171,6 +478,10 @@ function MinhaComissaoView() {
             <Card className="p-4">
               <p className="text-xs text-slate-400 mb-1">Avulsas aprovadas</p>
               <p className="text-xl font-bold text-slate-800">{moeda(dados.total_avulsas_aprovadas)}</p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-xs text-slate-400 mb-1">Extras aprovados</p>
+              <p className="text-xl font-bold text-slate-800">{moeda(dados.total_extras_aprovados)}</p>
             </Card>
             <Card className="p-4">
               <p className="text-xs text-slate-400 mb-1">Total do mês</p>
@@ -188,7 +499,9 @@ function MinhaComissaoView() {
                     <tr>
                       <th className="px-4 py-2.5 font-medium">Cirurgia</th>
                       <th className="px-4 py-2.5 font-medium">Data prevista</th>
-                      <th className="px-4 py-2.5 font-medium">Valor combinado</th>
+                      <th className="px-4 py-2.5 font-medium">Valor</th>
+                      <th className="px-4 py-2.5 font-medium">Status</th>
+                      {ehPj && <th className="px-4 py-2.5 font-medium"></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -197,12 +510,74 @@ function MinhaComissaoView() {
                         <td className="px-4 py-2.5 font-medium text-slate-800">{p.nome_cirurgia}</td>
                         <td className="px-4 py-2.5 text-slate-600">{formatarData(p.data_prevista)}</td>
                         <td className="px-4 py-2.5 text-slate-600">{moeda(p.valor_comissao)}</td>
+                        <td className="px-4 py-2.5">
+                          <Badge tone={statusAvulsaTone(p.status_participante)}>{p.status_participante}</Badge>
+                          {p.observacao && <p className="text-xs text-slate-400 mt-0.5">{p.observacao}</p>}
+                        </td>
+                        {ehPj && (
+                          <td className="px-4 py-2.5 text-right">
+                            {p.status_participante === 'pendente' && (
+                              <Button
+                                variant="danger"
+                                disabled={removendoParticipacao === p.id}
+                                onClick={() => removerParticipacao(p.id)}
+                              >
+                                Remover
+                              </Button>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </Card>
+          )}
+
+          {ehPj && (
+            <>
+              <h2 className="font-semibold text-slate-800 mb-2">Vincular minha participação em cirurgia</h2>
+              <p className="text-xs text-slate-400 mb-3">
+                Selecione a cirurgia em que você participou e o valor combinado da sua comissão. Fica pendente até a coordenação
+                (ou admin/financeiro) aprovar — o valor final aprovado é o que entra no seu total.
+              </p>
+              <Card className="p-4 mb-6 space-y-3 max-w-2xl">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Cirurgia</Label>
+                    <Select
+                      value={formParticipacao.cirurgia_id}
+                      onChange={(e) => setFormParticipacao({ ...formParticipacao, cirurgia_id: e.target.value })}
+                    >
+                      <option value="">Selecione...</option>
+                      {cirurgias.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome_cirurgia} — {c.paciente_nome} ({formatarData(c.data_prevista)})
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Valor combinado</Label>
+                    <Input
+                      type="number"
+                      value={formParticipacao.valor_comissao || ''}
+                      onChange={(e) => setFormParticipacao({ ...formParticipacao, valor_comissao: Number(e.target.value) })}
+                    />
+                  </div>
+                </div>
+                {erroParticipacao && (
+                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erroParticipacao}</p>
+                )}
+                <Button
+                  onClick={vincularParticipacao}
+                  disabled={salvandoParticipacao || !formParticipacao.cirurgia_id || !formParticipacao.valor_comissao}
+                >
+                  {salvandoParticipacao ? 'Salvando...' : '+ Vincular participação'}
+                </Button>
+              </Card>
+            </>
           )}
 
           <h2 className="font-semibold text-slate-800 mb-2">Comissões avulsas (paciente não cadastrado)</h2>
@@ -231,11 +606,16 @@ function MinhaComissaoView() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div className="min-w-0">
                 <Label>Data</Label>
-                <Input type="date" value={formAvulsa.data} onChange={(e) => setFormAvulsa({ ...formAvulsa, data: e.target.value })} />
+                <Input
+                  type="date"
+                  className="w-full min-w-0"
+                  value={formAvulsa.data}
+                  onChange={(e) => setFormAvulsa({ ...formAvulsa, data: e.target.value })}
+                />
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label>Valor</Label>
                 <Input
                   type="number"
@@ -295,6 +675,85 @@ function MinhaComissaoView() {
                           Editar
                         </Button>
                         <Button variant="danger" onClick={() => removerAvulsa(a)}>
+                          Remover
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          <h2 className="font-semibold text-slate-800 mb-2">Extras (condução, reembolsos)</h2>
+          <p className="text-xs text-slate-400 mb-3">
+            Use pra valores extras que você teve (ex: condução/Uber até a clínica) e que devem entrar na sua comissão. Fica pendente
+            até admin/financeiro/coordenação aprovar.
+          </p>
+
+          <Card className="p-4 mb-4 space-y-3 max-w-2xl">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="min-w-0">
+                <Label>Descrição</Label>
+                <Input
+                  placeholder="Ex: Condução até a clínica"
+                  value={formExtra.descricao}
+                  onChange={(e) => setFormExtra({ ...formExtra, descricao: e.target.value })}
+                />
+              </div>
+              <div className="min-w-0">
+                <Label>Data</Label>
+                <Input
+                  type="date"
+                  className="w-full min-w-0"
+                  value={formExtra.data}
+                  onChange={(e) => setFormExtra({ ...formExtra, data: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="max-w-[200px]">
+              <Label>Valor</Label>
+              <Input
+                type="number"
+                value={formExtra.valor || ''}
+                onChange={(e) => setFormExtra({ ...formExtra, valor: Number(e.target.value) })}
+              />
+            </div>
+            {erroExtra && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erroExtra}</p>}
+            <div className="flex justify-end gap-2">
+              {editandoExtra && (
+                <Button variant="secondary" onClick={cancelarEdicaoExtra}>
+                  Cancelar edição
+                </Button>
+              )}
+              <Button onClick={salvarExtra} disabled={salvandoExtra || !formExtra.data || !formExtra.descricao || !formExtra.valor}>
+                {salvandoExtra ? 'Salvando...' : editandoExtra ? 'Salvar alterações' : '+ Lançar extra'}
+              </Button>
+            </div>
+          </Card>
+
+          {dados.extras.length === 0 ? (
+            <EmptyState text="Nenhum extra lançado neste mês." />
+          ) : (
+            <div className="space-y-2">
+              {dados.extras.map((e) => (
+                <Card key={e.id} className="p-3 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{e.descricao}</p>
+                    <p className="text-xs text-slate-400">
+                      {formatarData(e.data)}
+                      {e.status === 'recusada' && e.observacao_aprovacao ? ` · Motivo: ${e.observacao_aprovacao}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <p className="text-sm font-semibold text-slate-800">{moeda(e.valor)}</p>
+                    <Badge tone={statusAvulsaTone(e.status)}>{e.status}</Badge>
+                    {e.status === 'pendente' && (
+                      <>
+                        <Button variant="ghost" onClick={() => abrirEdicaoExtra(e)}>
+                          Editar
+                        </Button>
+                        <Button variant="danger" onClick={() => removerExtra(e)}>
                           Remover
                         </Button>
                       </>
@@ -512,6 +971,8 @@ function ComissoesGestao() {
         </Button>
       </Card>
 
+      <AprovacaoParticipantesView />
+
       <h2 className="font-semibold text-slate-800 mb-2">Comissões avulsas pendentes de aprovação</h2>
       {pendentes.length === 0 ? (
         <p className="text-sm text-slate-400 mb-6">Nenhuma pendente no momento.</p>
@@ -571,6 +1032,9 @@ function ComissoesGestao() {
                   {r.procedimentos.map((p) => (
                     <p key={p.id} className="text-xs text-slate-500">
                       {p.nome_cirurgia} ({formatarData(p.data_prevista)}) — {moeda(p.valor_comissao)}
+                      {p.status_participante !== 'aprovada' && (
+                        <span className={p.status_participante === 'recusada' ? 'text-red-500' : 'text-amber-500'}> · {p.status_participante}</span>
+                      )}
                     </p>
                   ))}
                 </div>

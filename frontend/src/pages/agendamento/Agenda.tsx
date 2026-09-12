@@ -56,6 +56,37 @@ const statusTom: Record<StatusAgendamento, 'slate' | 'green' | 'red' | 'amber' |
   faltou: 'amber',
 }
 
+// Paleta por tipo de procedimento (consulta, cirurgia, retorno etc.) — classes
+// escritas por extenso (não geradas dinamicamente) porque o Tailwind precisa
+// achar a classe literal no código-fonte pra gerar o CSS dela. `hex` é usado
+// via style inline pra colorir só a borda esquerda do card: uma classe
+// `border-{cor}` normal entraria em conflito de cascata com o `border-slate-200`
+// que o componente <Card> já aplica nos outros 3 lados (a ordem de geração do
+// Tailwind é alfabética por nome de cor, então "slate" vence ou perde a
+// depender da cor sorteada — inconsistente); inline style sempre vence.
+interface CorTipo {
+  dot: string
+  chipBg: string
+  chipText: string
+  hex: string
+}
+const PALETA_TIPOS: CorTipo[] = [
+  { dot: 'bg-sky-500', chipBg: 'bg-sky-50', chipText: 'text-sky-700', hex: '#38bdf8' },
+  { dot: 'bg-violet-500', chipBg: 'bg-violet-50', chipText: 'text-violet-700', hex: '#a78bfa' },
+  { dot: 'bg-rose-500', chipBg: 'bg-rose-50', chipText: 'text-rose-700', hex: '#fb7185' },
+  { dot: 'bg-emerald-500', chipBg: 'bg-emerald-50', chipText: 'text-emerald-700', hex: '#34d399' },
+  { dot: 'bg-amber-500', chipBg: 'bg-amber-50', chipText: 'text-amber-700', hex: '#fbbf24' },
+  { dot: 'bg-cyan-500', chipBg: 'bg-cyan-50', chipText: 'text-cyan-700', hex: '#22d3ee' },
+  { dot: 'bg-fuchsia-500', chipBg: 'bg-fuchsia-50', chipText: 'text-fuchsia-700', hex: '#e879f9' },
+  { dot: 'bg-lime-500', chipBg: 'bg-lime-50', chipText: 'text-lime-700', hex: '#a3e635' },
+  { dot: 'bg-indigo-500', chipBg: 'bg-indigo-50', chipText: 'text-indigo-700', hex: '#818cf8' },
+  { dot: 'bg-orange-500', chipBg: 'bg-orange-50', chipText: 'text-orange-700', hex: '#fb923c' },
+]
+// Consulta sem tipo definido (registros antigos, de antes de existir esse campo).
+const COR_SEM_TIPO: CorTipo = { dot: 'bg-blue-500', chipBg: 'bg-blue-50', chipText: 'text-blue-700', hex: '#60a5fa' }
+// Compromisso (bloqueio de agenda sem paciente: reunião, plantão, cirurgia externa...).
+const COR_COMPROMISSO: CorTipo = { dot: 'bg-slate-400', chipBg: 'bg-slate-100', chipText: 'text-slate-600', hex: '#cbd5e1' }
+
 interface FormAgendamento {
   paciente_id: string
   medico_id: string
@@ -305,6 +336,20 @@ export default function Agenda() {
     [formCompromisso],
   )
 
+  // Cor estável por tipo de procedimento — mesma ordem sempre que a lista de
+  // tipos cadastrados não mudar, então cada tipo mantém sua cor entre acessos.
+  const corPorTipo = useMemo(() => {
+    const mapa = new Map<string, CorTipo>()
+    tiposProcedimento.forEach((t, i) => mapa.set(t.id, PALETA_TIPOS[i % PALETA_TIPOS.length]))
+    return mapa
+  }, [tiposProcedimento])
+
+  function corDoItem(item: ItemAgenda): CorTipo {
+    if (item.tipo === 'compromisso') return COR_COMPROMISSO
+    const tipoId = item.agendamento.tipo_procedimento_id
+    return (tipoId && corPorTipo.get(tipoId)) || COR_SEM_TIPO
+  }
+
   const itensPorDia = useMemo(() => {
     const mapa = new Map<string, ItemAgenda[]>()
     for (const a of agendamentosMes) {
@@ -386,8 +431,8 @@ export default function Agenda() {
           {celulas.map((dia, i) => {
             if (!dia) return <div key={`vazio-${i}`} />
             const itensDia = itensPorDia.get(dia) ?? []
-            const temConsulta = itensDia.some((it) => it.tipo === 'consulta')
-            const temCompromisso = itensDia.some((it) => it.tipo === 'compromisso')
+            // Uma bolinha por cor distinta presente no dia (máx. 4, pra não poluir a célula).
+            const coresDoDia = [...new Set(itensDia.map((it) => corDoItem(it).dot))].slice(0, 4)
             const selecionado = dia === dataSelecionada
             const ehHoje = dia === hoje()
             return (
@@ -406,14 +451,11 @@ export default function Agenda() {
                 <span className={`text-xs sm:text-sm font-semibold ${selecionado ? 'text-white' : ehHoje ? 'text-brand-700' : 'text-slate-700'}`}>
                   {Number(dia.slice(8, 10))}
                 </span>
-                {(temConsulta || temCompromisso) && (
+                {coresDoDia.length > 0 && (
                   <div className="flex gap-0.5 mt-1">
-                    {temConsulta && (
-                      <span className={`h-1.5 w-1.5 rounded-full ${selecionado ? 'bg-white' : 'bg-blue-500'}`} />
-                    )}
-                    {temCompromisso && (
-                      <span className={`h-1.5 w-1.5 rounded-full ${selecionado ? 'bg-white/70' : 'bg-slate-400'}`} />
-                    )}
+                    {coresDoDia.map((cor, idx) => (
+                      <span key={idx} className={`h-1.5 w-1.5 rounded-full ${selecionado ? 'bg-white/80' : cor}`} />
+                    ))}
                   </div>
                 )}
                 {itensDia.length > 0 && (
@@ -427,6 +469,42 @@ export default function Agenda() {
         </div>
       </Card>
 
+      {(tiposProcedimento.length > 0 || compromissosMes.length > 0) && (
+        <Card className="p-3.5 sm:p-4 mb-6">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2.5">Legenda</p>
+          <div className="flex flex-wrap gap-2">
+            {tiposProcedimento.map((t) => {
+              const cor = corPorTipo.get(t.id) ?? COR_SEM_TIPO
+              return (
+                <span
+                  key={t.id}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${cor.chipBg} ${cor.chipText}`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${cor.dot}`} />
+                  {t.nome}
+                </span>
+              )
+            })}
+            {agendamentosMes.some((a) => !a.tipo_procedimento_id) && (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${COR_SEM_TIPO.chipBg} ${COR_SEM_TIPO.chipText}`}
+              >
+                <span className={`h-2 w-2 rounded-full ${COR_SEM_TIPO.dot}`} />
+                Consulta (sem tipo definido)
+              </span>
+            )}
+            {compromissosMes.length > 0 && (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${COR_COMPROMISSO.chipBg} ${COR_COMPROMISSO.chipText}`}
+              >
+                <span className={`h-2 w-2 rounded-full ${COR_COMPROMISSO.dot}`} />
+                Compromisso externo
+              </span>
+            )}
+          </div>
+        </Card>
+      )}
+
       <h3 className="text-sm font-bold text-slate-800 mb-3">{formatarDataExtenso(dataSelecionada)}</h3>
 
       {carregando ? (
@@ -435,17 +513,29 @@ export default function Agenda() {
         <EmptyState text="Nada marcado para este dia." />
       ) : (
         <div className="space-y-3">
-          {itensDoDia.map((item) =>
-            item.tipo === 'consulta' ? (
-              <Card key={item.agendamento.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
+          {itensDoDia.map((item) => {
+            const cor = corDoItem(item)
+            return item.tipo === 'consulta' ? (
+              <Card
+                key={item.agendamento.id}
+                style={{ borderLeftColor: cor.hex }}
+                className="p-4 pl-3.5 border-l-4 flex flex-wrap items-center justify-between gap-3"
+              >
                 <div>
                   <p className="font-medium text-slate-800">
                     {item.agendamento.data_hora.slice(11, 16)} · {item.agendamento.paciente_nome}
                   </p>
-                  <p className="text-sm text-slate-500">
-                    Dr(a). {item.agendamento.medico_nome} ·{' '}
-                    {item.agendamento.tipo === 'telemedicina' ? 'Telemedicina' : 'Presencial'}
-                    {item.agendamento.tipo_procedimento_nome && ` · ${item.agendamento.tipo_procedimento_nome}`}
+                  <p className="text-sm text-slate-500 flex flex-wrap items-center gap-1.5">
+                    <span>
+                      Dr(a). {item.agendamento.medico_nome} ·{' '}
+                      {item.agendamento.tipo === 'telemedicina' ? 'Telemedicina' : 'Presencial'}
+                    </span>
+                    {item.agendamento.tipo_procedimento_nome && (
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${cor.chipBg} ${cor.chipText}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${cor.dot}`} />
+                        {item.agendamento.tipo_procedimento_nome}
+                      </span>
+                    )}
                   </p>
                   {item.agendamento.observacoes && (
                     <p className="text-xs text-slate-400 mt-1">{item.agendamento.observacoes}</p>
@@ -481,7 +571,11 @@ export default function Agenda() {
                 </div>
               </Card>
             ) : (
-              <Card key={item.compromisso.id} className="p-4 flex flex-wrap items-center justify-between gap-3 bg-slate-50/60">
+              <Card
+                key={item.compromisso.id}
+                style={{ borderLeftColor: cor.hex }}
+                className="p-4 pl-3.5 border-l-4 flex flex-wrap items-center justify-between gap-3 bg-slate-50/60"
+              >
                 <div>
                   <p className="font-medium text-slate-800 flex items-center gap-1.5">
                     <CalendarClock className="h-4 w-4 text-slate-400" />
@@ -498,8 +592,8 @@ export default function Agenda() {
                   </Button>
                 )}
               </Card>
-            ),
-          )}
+            )
+          })}
         </div>
       )}
 

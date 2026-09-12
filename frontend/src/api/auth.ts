@@ -5,6 +5,11 @@ export const authApi = {
   login: (email: string, senha: string, lembrar: boolean) =>
     api.post<{ token: string; usuario: UsuarioLogado }>('/auth/login', { email, senha, lembrar }),
   me: () => api.get<UsuarioLogado>('/auth/me'),
-  atualizarMe: (dados: { nome?: string; email?: string; senha?: string }) =>
+  atualizarMe: (dados: { nome?: string; email?: string; senha?: string; sexo?: string }) =>
     api.put<UsuarioLogado>('/auth/me', dados),
+  enviarFoto: (foto: Blob) => {
+    const formData = new FormData()
+    formData.append('foto', foto, 'foto.jpg')
+    return api.upload<UsuarioLogado>('/auth/me/foto', formData)
+  },
 }

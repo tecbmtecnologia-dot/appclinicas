@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { HorarioDia, Role, Usuario } from '../types'
+import type { HorarioDia, Role, Sexo, Usuario } from '../types'
 
 export interface Colega {
   id: string
@@ -25,6 +25,7 @@ export interface UsuarioForm {
   jornada_semanal?: Record<string, HorarioDia> | null
   dia_fechamento_folha?: number
   data_admissao?: string | null
+  sexo?: Sexo | null
   ativo?: boolean
 }
 

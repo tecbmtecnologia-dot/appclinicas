@@ -109,7 +109,21 @@ export interface ModeloReceita {
   created_at: string
 }
 
+export interface ModeloExame {
+  id: string
+  usuario_id: string
+  nome: string
+  texto: string
+  created_at: string
+}
+
 export interface ReceitaResumo {
+  id: string
+  data: string
+  medico_nome: string
+}
+
+export interface PedidoExameResumo {
   id: string
   data: string
   medico_nome: string
@@ -160,6 +174,7 @@ export interface Prontuario {
   queixa: string
   diagnostico: string
   prescricao: string
+  pedido_exames?: string
   evolucao?: string
   observacoes?: string
   created_at: string
@@ -189,6 +204,7 @@ export interface Usuario {
   dia_fechamento_folha?: number
   data_admissao?: string | null
   foto_url?: string | null
+  sexo?: Sexo | null
   ativo: number
   created_at: string
 }
@@ -506,7 +522,15 @@ export interface ParticipanteCirurgiaComissao {
   cirurgia_id: string
   usuario_id: string
   usuario_nome?: string
+  usuario_role?: Role
   valor_comissao: number
+  status: StatusComissaoAvulsa
+  observacao?: string | null
+  aprovado_por?: string | null
+  aprovado_em?: string | null
+  nome_cirurgia?: string
+  data_prevista?: string | null
+  paciente_nome?: string | null
   created_at: string
 }
 
@@ -514,6 +538,8 @@ export interface ProcedimentoComissao {
   id: string
   cirurgia_id: string
   valor_comissao: number
+  status_participante: StatusComissaoAvulsa
+  observacao?: string | null
   nome_cirurgia: string
   data_prevista?: string | null
   status: StatusCirurgia
@@ -538,6 +564,22 @@ export interface ComissaoAvulsa {
   created_at: string
 }
 
+export interface ComissaoExtra {
+  id: string
+  usuario_id: string
+  usuario_nome?: string
+  usuario_role?: Role
+  data: string
+  descricao: string
+  valor: number
+  status: StatusComissaoAvulsa
+  observacao_aprovacao?: string | null
+  criado_por?: string | null
+  aprovado_por?: string | null
+  aprovado_em?: string | null
+  created_at: string
+}
+
 export interface ResumoComissaoUsuario {
   usuario_id: string
   usuario_nome: string
@@ -547,6 +589,8 @@ export interface ResumoComissaoUsuario {
   total_procedimentos: number
   avulsas: ComissaoAvulsa[]
   total_avulsas_aprovadas: number
+  extras: ComissaoExtra[]
+  total_extras_aprovados: number
   total: number
 }
 
@@ -557,6 +601,8 @@ export interface MinhaComissao {
   total_procedimentos: number
   avulsas: ComissaoAvulsa[]
   total_avulsas_aprovadas: number
+  extras: ComissaoExtra[]
+  total_extras_aprovados: number
   total: number
 }
 
@@ -621,6 +667,8 @@ export interface UsuarioLogado {
   cargo?: string | null
   clinica_id?: string | null
   medico_id?: string | null
+  sexo?: Sexo | null
+  foto_url?: string | null
   clinica?: ClinicaResumo | null
 }
 

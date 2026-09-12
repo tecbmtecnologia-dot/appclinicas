@@ -43,11 +43,85 @@ body {
   color: var(--color-brand-900);
 }
 
+/* Input de data no iOS/Safari: os controles nativos (ícone de calendário,
+   botão de "limpar", spinner) não respeitam nosso padding/borda arredondada
+   e ficam cortando a borda da caixa. `appearance: none` tira toda a "casca"
+   nativa do campo, deixando ele visualmente idêntico aos outros inputs de
+   texto/número do app (mesma borda, padding e altura) — o toque ainda abre
+   o seletor de data normalmente, só perde a decoração própria do sistema. */
+input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type='date']::-webkit-clear-button,
+input[type='date']::-webkit-inner-spin-button,
+input[type='date']::-webkit-calendar-picker-indicator {
+  display: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* Fundo com leve tom da cor da clínica (--color-brand-500, sobrescrita por
    clínica em AuthContext) por trás dos cartões brancos — usado no app depois
    do login, em vez do cinza neutro plano de antes. */
 .bg-app {
   background-color: color-mix(in srgb, var(--color-brand-500) 7%, white);
+}
+
+/* No desktop (mobile fica igual, de propósito) o fundo fica um tom neutro
+   levemente mais encorpado que o padrão — cinza neutro, sem mistura com a
+   cor da clínica, só pra não ficar tão "estourado" de claro. */
+@media (min-width: 768px) {
+  .bg-app {
+    background-color: #eef1f4;
+  }
+}
+
+/* Fundo dos cards (usado pelo componente <Card>) — branco puro no mobile
+   (sem mudança lá), e no desktop um cinza neutro bem próximo do fundo da
+   página (--bg-app), só um tom mais claro, pra combinar em vez de destoar
+   com um branco estourado. */
+.bg-card {
+  background-color: #ffffff;
+}
+@media (min-width: 768px) {
+  .bg-card {
+    background-color: #f5f7f8;
+  }
+}
+
+/* Transição leve ao trocar de rota/aba no menu — o conteúdo principal entra
+   com um fade + leve deslocamento pra cima, em vez de "estalar" na troca. */
+@keyframes conteudo-entrada {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.conteudo-pagina {
+  animation: conteudo-entrada 0.22s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .conteudo-pagina {
+    animation: none;
+  }
+}
+
+/* No celular, o iOS Safari dá zoom automático ao focar um campo com fonte
+   menor que 16px (nossos Input/Select/Textarea usam text-sm = 14px) — depois
+   de digitar, a tela fica ampliada e precisa dar pinça pra voltar ao normal.
+   Forçar 16px só até o breakpoint md (mesmo ponto de corte usado no resto do
+   app pra mobile x desktop) evita o zoom sem mudar a aparência no desktop. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 .bg-clinical-pattern {

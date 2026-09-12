@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   BarChart3,
   Boxes,
@@ -11,6 +11,7 @@ import {
   FileBarChart,
   FileSignature,
   FileText,
+  FlaskConical,
   HandCoins,
   LayoutGrid,
   LogOut,
@@ -58,7 +59,13 @@ const navOperacional: { to: string; label: string; end?: boolean; roles?: Role[]
   { to: '/administrativo/usuarios', label: 'Usuários', roles: ['admin', 'coordenador'], icon: UserCog },
   { to: '/telemedicina', label: 'Telemedicina', roles: ['admin', 'coordenador', 'medico'], icon: Video },
   { to: '/reunioes', label: 'Reuniões', icon: Users2 },
-  { to: '/receitas', label: 'Receitas', icon: Printer },
+  { to: '/receitas', label: 'Receitas', roles: ['admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'financeiro'], icon: Printer },
+  {
+    to: '/exames',
+    label: 'Pedidos de exames',
+    roles: ['admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'financeiro'],
+    icon: FlaskConical,
+  },
   { to: '/financeiro', label: 'Financeiro', roles: ['admin', 'financeiro', 'medico'], icon: Wallet },
   {
     to: '/financeiro/minhas-financas',
@@ -66,12 +73,13 @@ const navOperacional: { to: string; label: string; end?: boolean; roles?: Role[]
     roles: ['admin', 'coordenador', 'medico', 'enfermagem', 'financeiro'],
     icon: PiggyBank,
   },
-  { to: '/financeiro/comissoes', label: 'Comissões', roles: ['admin', 'financeiro', 'pj'], icon: HandCoins },
+  { to: '/financeiro/comissoes', label: 'Comissões', roles: ['admin', 'financeiro', 'pj', 'coordenador'], icon: HandCoins },
   { to: '/ponto', label: 'Ponto', roles: ['admin', 'enfermagem', 'recepcao', 'financeiro'], icon: Clock },
   { to: '/ponto/relatorio', label: 'Relatório de ponto', roles: ['admin', 'coordenador', 'financeiro'], icon: BarChart3 },
   { to: '/configuracoes/clinica', label: 'Minha Clínica', roles: ['admin'], icon: Building2 },
   { to: '/configuracoes/perfis-instalacao', label: 'Apps da equipe', roles: ['admin'], icon: Smartphone },
   { to: '/configuracoes/modelos-receita', label: 'Modelos de receita', roles: ['admin'], icon: FileSignature },
+  { to: '/configuracoes/modelos-exame', label: 'Modelos de exames', roles: ['admin'], icon: FlaskConical },
   { to: '/configuracoes/contrato', label: 'Modelo de contrato', roles: ['admin'], icon: FileText },
   { to: '/configuracoes/itens-cirurgia', label: 'Itens de cirurgia', roles: ['admin'], icon: PackagePlus },
   { to: '/configuracoes/tipos-procedimento', label: 'Tipos de procedimento', roles: ['admin'], icon: ClipboardPlus },
@@ -158,12 +166,31 @@ function ConteudoMenu({
       >
         {usuario && (
           <div className="mb-3 px-1 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-700 truncate">{usuario.nome}</p>
-              <p className="text-xs text-slate-400">{usuario.cargo || rotulosRole[usuario.role]}</p>
+            <div className="flex items-center gap-2.5 min-w-0">
+              {usuario.foto_url ? (
+                <img src={usuario.foto_url} alt="" className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200 shrink-0" />
+              ) : (
+                <span className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                  <UserCog className="h-4 w-4 text-slate-400" />
+                </span>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-700 truncate">{usuario.nome}</p>
+                <p className="text-xs text-slate-400">{usuario.cargo || rotulosRole[usuario.role]}</p>
+              </div>
             </div>
             {!ehPlataforma && <NotificationBell />}
           </div>
+        )}
+        {!ehPlataforma && (
+          <NavLink
+            to="/meu-perfil"
+            onClick={aoNavegar}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+          >
+            <UserCog className="h-4 w-4" strokeWidth={2} />
+            Meu perfil / Alterar senha
+          </NavLink>
         )}
         <button
           onClick={sair}
@@ -183,6 +210,7 @@ function ConteudoMenu({
 
 export default function Layout() {
   const { usuario, sair } = useAuth()
+  const location = useLocation()
   const [menuAberto, setMenuAberto] = useState(false)
   const ehPlataforma = usuario?.role === 'super_admin'
   const itens = estaEmModoKiosk()
@@ -251,7 +279,9 @@ export default function Layout() {
         </header>
 
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-          <Outlet />
+          <div key={location.pathname} className="conteudo-pagina">
+            <Outlet />
+          </div>
         </main>
 
         <footer

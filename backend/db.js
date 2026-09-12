@@ -431,7 +431,34 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Reembolso/extra da comissão (ex: condução/Uber) — não é ligado a um paciente
+  -- ou cirurgia específica (diferente de comissoes_avulsas), só uma descrição
+  -- livre + valor. Mesmo fluxo pendente → aprovada das outras comissões.
+  CREATE TABLE IF NOT EXISTS comissoes_extras (
+    id TEXT PRIMARY KEY,
+    clinica_id TEXT NOT NULL REFERENCES clinicas(id),
+    usuario_id TEXT NOT NULL REFERENCES usuarios(id),
+    data TEXT NOT NULL,
+    descricao TEXT NOT NULL,
+    valor REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pendente',
+    observacao_aprovacao TEXT,
+    criado_por TEXT REFERENCES usuarios(id),
+    aprovado_por TEXT REFERENCES usuarios(id),
+    aprovado_em TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS modelos_receita (
+    id TEXT PRIMARY KEY,
+    clinica_id TEXT NOT NULL REFERENCES clinicas(id),
+    usuario_id TEXT NOT NULL REFERENCES usuarios(id),
+    nome TEXT NOT NULL,
+    texto TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS modelos_exame (
     id TEXT PRIMARY KEY,
     clinica_id TEXT NOT NULL REFERENCES clinicas(id),
     usuario_id TEXT NOT NULL REFERENCES usuarios(id),
@@ -487,6 +514,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_usuarios_clinica ON usuarios(clinica_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_perfis_instalacao_slug ON perfis_instalacao(clinica_id, slug);
   CREATE INDEX IF NOT EXISTS idx_modelos_receita_usuario ON modelos_receita(usuario_id);
+  CREATE INDEX IF NOT EXISTS idx_modelos_exame_usuario ON modelos_exame(usuario_id);
   CREATE INDEX IF NOT EXISTS idx_itens_cirurgia_catalogo_clinica ON itens_cirurgia_catalogo(clinica_id);
   CREATE INDEX IF NOT EXISTS idx_cirurgia_itens_cirurgia ON cirurgia_itens(cirurgia_id);
   CREATE INDEX IF NOT EXISTS idx_hospitais_clinica ON hospitais(clinica_id);
@@ -495,6 +523,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_cirurgia_auxiliares_cirurgia ON cirurgia_auxiliares(cirurgia_id);
   CREATE INDEX IF NOT EXISTS idx_comissoes_avulsas_usuario ON comissoes_avulsas(usuario_id);
   CREATE INDEX IF NOT EXISTS idx_comissoes_avulsas_clinica ON comissoes_avulsas(clinica_id);
+  CREATE INDEX IF NOT EXISTS idx_comissoes_extras_usuario ON comissoes_extras(usuario_id);
+  CREATE INDEX IF NOT EXISTS idx_comissoes_extras_clinica ON comissoes_extras(clinica_id);
   CREATE INDEX IF NOT EXISTS idx_notas_fiscais_paciente ON notas_fiscais_paciente(paciente_id);
   CREATE INDEX IF NOT EXISTS idx_contratos_paciente ON contratos_paciente(paciente_id);
   CREATE INDEX IF NOT EXISTS idx_fotos_paciente_paciente ON fotos_paciente(paciente_id);
@@ -547,6 +577,7 @@ migrarColunas('usuarios', [
   ['jornada_semanal', 'TEXT'],
   ['dia_fechamento_folha', 'INTEGER NOT NULL DEFAULT 20'],
   ['data_admissao', 'TEXT'],
+  ['sexo', 'TEXT'],
 ])
 
 migrarColunas('pontos', [
@@ -557,6 +588,7 @@ migrarColunas('pontos', [
 migrarColunas('prontuarios', [
   ['evolucao', 'TEXT'],
   ['criado_por', 'TEXT REFERENCES usuarios(id)'],
+  ['pedido_exames', 'TEXT'],
 ])
 
 migrarColunas('cirurgias', [['hospital_id', 'TEXT REFERENCES hospitais(id)']])
@@ -568,6 +600,18 @@ migrarColunas('cirurgia_itens', [['quantidade', 'INTEGER NOT NULL DEFAULT 1']])
 migrarColunas('comissoes_avulsas', [
   ['paciente_nome', 'TEXT'],
   ['nome_cirurgia', 'TEXT'],
+])
+
+// Participação em cirurgia passa a suportar auto-lançamento (ex: consultora/
+// fisioterapeuta vinculando a própria comissão) — fica 'pendente' até
+// admin/financeiro/coordenador aprovar (e poder editar o valor + anotar).
+// Linhas já existentes (sempre lançadas por admin/financeiro direto) ficam
+// 'aprovada' por padrão, sem mudar o total já calculado antes disso existir.
+migrarColunas('cirurgia_participantes', [
+  ['status', "TEXT NOT NULL DEFAULT 'aprovada'"],
+  ['observacao', 'TEXT'],
+  ['aprovado_por', 'TEXT REFERENCES usuarios(id)'],
+  ['aprovado_em', 'TEXT'],
 ])
 
 migrarColunas('pacientes', [

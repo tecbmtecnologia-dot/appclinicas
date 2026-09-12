@@ -3,12 +3,16 @@ import { nanoid } from 'nanoid'
 import { db } from '../db.js'
 import { requireRole } from '../auth.js'
 import { gerarReceitaPDF } from '../pdfReceita.js'
+import { gerarPedidoExamesPDF } from '../pdfPedidoExames.js'
 import { gerarHistoricoPacientePDF } from '../pdfHistoricoPaciente.js'
 
 const router = Router()
 const ACESSO = requireRole('admin', 'coordenador', 'medico', 'enfermagem', 'pj')
 const CRIACAO = requireRole('admin', 'coordenador', 'medico', 'enfermagem', 'pj', 'recepcao')
 const EDICAO = requireRole('admin', 'coordenador', 'medico')
+// Receita/pedido de exames — fisioterapeuta e consultora (role pj) não têm mais
+// acesso a esses documentos, nem pra ver/imprimir os já emitidos.
+const DOCUMENTOS = requireRole('admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'financeiro')
 
 const SELECT_JOIN = `
   SELECT pr.*, m.nome AS medico_nome, p.nome AS paciente_nome, u.role AS criado_por_role
@@ -56,7 +60,7 @@ router.get('/:id', ACESSO, (req, res) => {
 })
 
 router.post('/', CRIACAO, (req, res) => {
-  const { paciente_id, medico_id, data, queixa, diagnostico, prescricao, evolucao, observacoes } = req.body
+  const { paciente_id, medico_id, data, queixa, diagnostico, prescricao, pedido_exames, evolucao, observacoes } = req.body
   if (!paciente_id || !medico_id || !data) {
     return res.status(400).json({ error: 'paciente_id, medico_id e data são obrigatórios' })
   }
@@ -67,16 +71,17 @@ router.post('/', CRIACAO, (req, res) => {
   if (restritoEvolucao && !evolucao) {
     return res.status(400).json({ error: 'Descreva a evolução' })
   }
-  // Recepção só pode emitir receita em nome de um médico (quando ele não está na clínica),
-  // sem acesso a queixa/diagnóstico/evolução/observações do prontuário clínico.
+  // Recepção só pode emitir receita/pedido de exames em nome de um médico (quando ele
+  // não está na clínica), sem acesso a queixa/diagnóstico/evolução/observações do
+  // prontuário clínico.
   const restritoReceita = req.usuario.role === 'recepcao'
-  if (restritoReceita && !prescricao) {
-    return res.status(400).json({ error: 'Descreva a prescrição' })
+  if (restritoReceita && !prescricao && !pedido_exames) {
+    return res.status(400).json({ error: 'Descreva a prescrição ou o pedido de exames' })
   }
   const id = nanoid()
   db.prepare(
-    `INSERT INTO prontuarios (id, clinica_id, paciente_id, medico_id, data, queixa, diagnostico, prescricao, evolucao, observacoes, criado_por)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO prontuarios (id, clinica_id, paciente_id, medico_id, data, queixa, diagnostico, prescricao, pedido_exames, evolucao, observacoes, criado_por)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     req.usuario.clinica_id,
@@ -86,6 +91,7 @@ router.post('/', CRIACAO, (req, res) => {
     restritoReceita ? null : queixa ?? null,
     restritoEvolucao || restritoReceita ? null : diagnostico ?? null,
     restritoEvolucao ? null : prescricao ?? null,
+    restritoEvolucao ? null : pedido_exames ?? null,
     restritoReceita ? null : evolucao ?? null,
     restritoReceita ? null : observacoes ?? null,
     req.usuario.id,
@@ -93,10 +99,10 @@ router.post('/', CRIACAO, (req, res) => {
   res.status(201).json(db.prepare(SELECT_JOIN + ' WHERE pr.id = ?').get(id))
 })
 
-router.get('/paciente/:pacienteId/receitas', (req, res) => {
-  // Rota liberada para qualquer usuário autenticado da clínica (recepção, financeiro
-  // etc. incluídos) — só expõe o necessário para localizar e imprimir a receita,
-  // sem diagnóstico/evolução/queixa do prontuário.
+router.get('/paciente/:pacienteId/receitas', DOCUMENTOS, (req, res) => {
+  // Liberada pra maior parte dos perfis da clínica (recepção, financeiro etc.) —
+  // só expõe o necessário para localizar e imprimir a receita, sem diagnóstico/
+  // evolução/queixa do prontuário. Fisioterapeuta/consultora (pj) não têm acesso.
   const paciente = db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
   if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
 
@@ -106,6 +112,26 @@ router.get('/paciente/:pacienteId/receitas', (req, res) => {
        FROM prontuarios pr
        LEFT JOIN medicos m ON m.id = pr.medico_id
        WHERE pr.paciente_id = ? AND pr.clinica_id = ? AND pr.prescricao IS NOT NULL AND pr.prescricao != ''
+       ORDER BY pr.data DESC`,
+    )
+    .all(req.params.pacienteId, req.usuario.clinica_id)
+  res.json(rows)
+})
+
+router.get('/paciente/:pacienteId/pedidos-exames', DOCUMENTOS, (req, res) => {
+  // Liberada pra maior parte dos perfis da clínica (recepção, financeiro etc.) —
+  // só expõe o necessário para localizar e imprimir o pedido de exames, sem
+  // diagnóstico/evolução/queixa do prontuário. Fisioterapeuta/consultora (pj) não
+  // têm acesso.
+  const paciente = db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
+  if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
+
+  const rows = db
+    .prepare(
+      `SELECT pr.id, pr.data, m.nome AS medico_nome
+       FROM prontuarios pr
+       LEFT JOIN medicos m ON m.id = pr.medico_id
+       WHERE pr.paciente_id = ? AND pr.clinica_id = ? AND pr.pedido_exames IS NOT NULL AND pr.pedido_exames != ''
        ORDER BY pr.data DESC`,
     )
     .all(req.params.pacienteId, req.usuario.clinica_id)
@@ -128,7 +154,7 @@ router.get('/paciente/:pacienteId/historico.pdf', ACESSO, (req, res) => {
   gerarHistoricoPacientePDF(res, { paciente, registros, fotos, clinica })
 })
 
-router.get('/:id/receita.pdf', (req, res) => {
+router.get('/:id/receita.pdf', DOCUMENTOS, (req, res) => {
   const prontuario = db.prepare('SELECT * FROM prontuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!prontuario) return res.status(404).json({ error: 'Prontuário não encontrado' })
   if (!prontuario.prescricao) return res.status(400).json({ error: 'Este registro não tem prescrição' })
@@ -136,6 +162,16 @@ router.get('/:id/receita.pdf', (req, res) => {
   const medico = db.prepare('SELECT * FROM medicos WHERE id = ?').get(prontuario.medico_id)
   const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   gerarReceitaPDF(res, { prontuario, paciente, medico, clinica })
+})
+
+router.get('/:id/pedido-exames.pdf', DOCUMENTOS, (req, res) => {
+  const prontuario = db.prepare('SELECT * FROM prontuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+  if (!prontuario) return res.status(404).json({ error: 'Prontuário não encontrado' })
+  if (!prontuario.pedido_exames) return res.status(400).json({ error: 'Este registro não tem pedido de exames' })
+  const paciente = db.prepare('SELECT * FROM pacientes WHERE id = ?').get(prontuario.paciente_id)
+  const medico = db.prepare('SELECT * FROM medicos WHERE id = ?').get(prontuario.medico_id)
+  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  gerarPedidoExamesPDF(res, { prontuario, paciente, medico, clinica })
 })
 
 router.put('/:id', EDICAO, (req, res) => {
@@ -146,7 +182,7 @@ router.put('/:id', EDICAO, (req, res) => {
     return res.status(400).json({ error: 'Paciente ou médico inválido' })
   }
   db.prepare(
-    `UPDATE prontuarios SET paciente_id=?, medico_id=?, data=?, queixa=?, diagnostico=?, prescricao=?, evolucao=?, observacoes=? WHERE id=?`,
+    `UPDATE prontuarios SET paciente_id=?, medico_id=?, data=?, queixa=?, diagnostico=?, prescricao=?, pedido_exames=?, evolucao=?, observacoes=? WHERE id=?`,
   ).run(
     merged.paciente_id,
     merged.medico_id,
@@ -154,6 +190,7 @@ router.put('/:id', EDICAO, (req, res) => {
     merged.queixa,
     merged.diagnostico,
     merged.prescricao,
+    merged.pedido_exames,
     merged.evolucao,
     merged.observacoes,
     req.params.id,

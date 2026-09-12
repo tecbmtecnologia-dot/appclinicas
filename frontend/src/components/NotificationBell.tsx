@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell } from 'lucide-react'
+import { Bell, X } from 'lucide-react'
 import { notificacoesApi } from '../api/notificacoes'
 import type { Notificacao } from '../types'
 
@@ -70,31 +70,43 @@ export default function NotificationBell() {
       </button>
 
       {aberto && (
-        <div className="absolute right-0 bottom-full mb-2 md:bottom-auto md:top-full md:mt-2 z-50 w-80 max-h-96 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
-          <div className="px-4 py-2.5 border-b border-slate-100 font-semibold text-sm text-slate-700">Notificações</div>
-          {notificacoes.length === 0 ? (
-            <p className="text-sm text-slate-400 px-4 py-6 text-center">Nenhuma notificação.</p>
-          ) : (
-            notificacoes.map((n) => (
-              <button
-                key={n.id}
-                onClick={() => abrirNotificacao(n)}
-                className={`w-full text-left px-4 py-2.5 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors ${
-                  !n.lida ? 'bg-brand-50/50' : ''
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  {!n.lida && <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-brand-600 shrink-0" />}
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{n.titulo}</p>
-                    {n.mensagem && <p className="text-xs text-slate-500 truncate">{n.mensagem}</p>}
-                    <p className="text-[11px] text-slate-400 mt-0.5">{tempoRelativo(n.created_at)}</p>
-                  </div>
-                </div>
+        <>
+          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setAberto(false)} aria-hidden />
+          <div
+            className="fixed z-50 left-1/2 top-20 -translate-x-1/2 w-[92vw] max-w-sm max-h-[70vh] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
+          >
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 shrink-0">
+              <span className="font-semibold text-sm text-slate-700">Notificações</span>
+              <button onClick={() => setAberto(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X className="h-4 w-4" strokeWidth={2} />
               </button>
-            ))
-          )}
-        </div>
+            </div>
+            <div className="overflow-y-auto">
+              {notificacoes.length === 0 ? (
+                <p className="text-sm text-slate-400 px-4 py-6 text-center">Nenhuma notificação.</p>
+              ) : (
+                notificacoes.map((n) => (
+                  <button
+                    key={n.id}
+                    onClick={() => abrirNotificacao(n)}
+                    className={`w-full text-left px-4 py-2.5 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors ${
+                      !n.lida ? 'bg-brand-50/50' : ''
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {!n.lida && <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-brand-600 shrink-0" />}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{n.titulo}</p>
+                        {n.mensagem && <p className="text-xs text-slate-500 truncate">{n.mensagem}</p>}
+                        <p className="text-[11px] text-slate-400 mt-0.5">{tempoRelativo(n.created_at)}</p>
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

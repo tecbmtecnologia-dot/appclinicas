@@ -174,9 +174,33 @@ export function desenharMarcaDagua(doc, clinica) {
   doc.y = cursorY
 }
 
+// Linha de assinatura do médico, ancorada perto do rodapé da página em vez de logo
+// depois do conteúdo — sem isso, um texto curto (ex.: receita de 1 linha) deixava a
+// assinatura lá no meio da página, longe de onde o médico realmente assina no papel.
+// Se o conteúdo for longo o suficiente para já passar desse ponto, cede e desenha
+// logo abaixo do conteúdo (com uma folga) pra não sobrepor o texto.
+export function desenharAssinaturaMedico(doc, medico) {
+  const largura = 240
+  const x = (doc.page.width - largura) / 2
+  const yAncoragem = doc.page.height - doc.page.margins.bottom - 90
+  const y = Math.max(doc.y + 20, yAncoragem)
+
+  doc.moveTo(x, y).lineTo(x + largura, y).strokeColor('#999').stroke()
+  doc.fillColor('#000').fontSize(10).font('Jakarta').text(medico?.nome ? `Dr(a). ${medico.nome}` : '', x, y + 4, {
+    width: largura,
+    align: 'center',
+  })
+  if (medico?.crm) {
+    doc.fontSize(9).fillColor('#555').text(`CRM: ${medico.crm}`, x, doc.y, { width: largura, align: 'center' })
+    doc.fillColor('#000')
+  }
+}
+
 // Endereço + telefone/e-mail da clínica, fixados perto do rodapé da página atual.
-export function desenharRodapeContato(doc, clinica) {
-  const partes = [clinica?.endereco, clinica?.telefone, clinica?.email].filter(Boolean)
+// `incluirEndereco: false` tira o endereço do rodapé (mantendo telefone/e-mail) —
+// usado no relatório cirúrgico, que não deve exibir o endereço da clínica.
+export function desenharRodapeContato(doc, clinica, { incluirEndereco = true } = {}) {
+  const partes = [incluirEndereco ? clinica?.endereco : null, clinica?.telefone, clinica?.email].filter(Boolean)
   if (partes.length === 0) return
   const cursorX = doc.x
   const cursorY = doc.y

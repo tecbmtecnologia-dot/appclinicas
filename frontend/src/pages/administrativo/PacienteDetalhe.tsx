@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Activity, Camera, CheckCircle2, FileText, Printer, Scissors, Trash2, UserCircle2 } from 'lucide-react'
+import { Activity, Camera, CheckCircle2, FileText, FlaskConical, Printer, Scissors, Trash2, UserCircle2 } from 'lucide-react'
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Select, Textarea } from '../../components/ui'
 import CapturaFoto from '../../components/CapturaFoto'
 import { buscarEnderecoPorCep, pacientesApi } from '../../api/pacientes'
 import { medicosApi } from '../../api/medicos'
 import { prontuariosApi } from '../../api/prontuarios'
 import { modelosReceitaApi } from '../../api/modelosReceita'
+import { modelosExameApi } from '../../api/modelosExame'
 import { fotosPacienteApi } from '../../api/fotosPaciente'
 import { sessoesFisioterapiaApi } from '../../api/sessoesFisioterapia'
 import { agendamentosApi } from '../../api/agendamentos'
@@ -26,13 +27,16 @@ import type {
   FotoPaciente,
   ItemOrcamentoCatalogo,
   Medico,
+  ModeloExame,
   ModeloOrcamento,
   ModeloReceita,
   NotaFiscalPaciente,
   Orcamento,
   Paciente,
+  PedidoExameResumo,
   Pagamento,
   Prontuario as ProntuarioType,
+  ReceitaResumo,
   SessaoFisioterapia,
   Sexo,
   TipoFotoPaciente,
@@ -134,6 +138,7 @@ const vazioOrcamento: OrcamentoForm = { paciente_id: '', titulo: '', itens: [], 
 const ABAS = [
   { id: 'dados', label: 'Dados' },
   { id: 'prontuario', label: 'Prontuário' },
+  { id: 'documentos', label: 'Documentos' },
   { id: 'financeiro', label: 'Financeiro' },
   { id: 'contratos', label: 'Contratos' },
   { id: 'cirurgias', label: 'Cirurgias' },
@@ -162,9 +167,16 @@ export default function PacienteDetalhe() {
   const podeVerCirurgias = role ? ['admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'pj'].includes(role) : false
   const podeVerFinanceiro = podeVerOrcamentos || podeVerPagamentos
   const ehEnfermagem = role === 'enfermagem' || role === 'pj'
+  // Mesmas roles que já podem emitir prescrição/pedido de exames pelo prontuário
+  // (CRIACAO no backend, exceto enfermagem/pj, que só registram evolução).
+  const podeEmitirDocumentos = role ? ['admin', 'coordenador', 'medico', 'recepcao'].includes(role) : false
+  // Ver/imprimir documentos já emitidos é aberto a qualquer perfil logado da
+  // clínica, menos pj (fisioterapeuta/consultora) — removido a pedido do usuário.
+  const podeVerDocumentos = role ? role !== 'pj' : false
 
   const abasVisiveis = ABAS.filter((a) => {
     if (a.id === 'prontuario') return podeVerProntuario
+    if (a.id === 'documentos') return podeVerDocumentos
     if (a.id === 'financeiro') return podeVerFinanceiro
     if (a.id === 'contratos') return podeVerContratos
     if (a.id === 'cirurgias') return podeVerCirurgias
@@ -297,6 +309,10 @@ export default function PacienteDetalhe() {
   const [itensPrescricao, setItensPrescricao] = useState<string[]>([])
   const [modeloParaInserir, setModeloParaInserir] = useState('')
   const [itemPrescricaoLivre, setItemPrescricaoLivre] = useState('')
+  const [modelosExame, setModelosExame] = useState<ModeloExame[]>([])
+  const [itensPedidoExames, setItensPedidoExames] = useState<string[]>([])
+  const [modeloExameParaInserir, setModeloExameParaInserir] = useState('')
+  const [itemExameLivre, setItemExameLivre] = useState('')
   const [fotos, setFotos] = useState<FotoPaciente[]>([])
   const [modalFotoAberto, setModalFotoAberto] = useState(false)
   const [formFoto, setFormFoto] = useState(vazioFoto)
@@ -308,7 +324,10 @@ export default function PacienteDetalhe() {
   useEffect(() => {
     if (!podeVerProntuario) return
     medicosApi.listar().then(setMedicos).catch(() => {})
-    if (!ehEnfermagem) modelosReceitaApi.listar().then(setModelosReceita).catch(() => {})
+    if (!ehEnfermagem) {
+      modelosReceitaApi.listar().then(setModelosReceita).catch(() => {})
+      modelosExameApi.listar().then(setModelosExame).catch(() => {})
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [podeVerProntuario])
 
@@ -352,6 +371,23 @@ export default function PacienteDetalhe() {
 
   function removerItemPrescricao(indice: number) {
     setItensPrescricao((itens) => itens.filter((_, i) => i !== indice))
+  }
+
+  function inserirModeloExameNoPedido() {
+    const modelo = modelosExame.find((m) => m.id === modeloExameParaInserir)
+    if (!modelo) return
+    setItensPedidoExames((itens) => [...itens, modelo.texto])
+    setModeloExameParaInserir('')
+  }
+
+  function inserirItemExameLivre() {
+    if (!itemExameLivre.trim()) return
+    setItensPedidoExames((itens) => [...itens, itemExameLivre.trim()])
+    setItemExameLivre('')
+  }
+
+  function removerItemExame(indice: number) {
+    setItensPedidoExames((itens) => itens.filter((_, i) => i !== indice))
   }
 
   function carregarFotos() {
@@ -414,9 +450,15 @@ export default function PacienteDetalhe() {
     if (!id) return
     setSalvandoEvolucao(true)
     try {
-      await prontuariosApi.criar({ ...formEvolucao, prescricao: itensPrescricao.join('\n\n'), paciente_id: id })
+      await prontuariosApi.criar({
+        ...formEvolucao,
+        prescricao: itensPrescricao.join('\n\n'),
+        pedido_exames: itensPedidoExames.join('\n\n'),
+        paciente_id: id,
+      })
       setFormEvolucao(vazioEvolucao)
       setItensPrescricao([])
+      setItensPedidoExames([])
       setMostrarFormEvolucao(false)
       carregarRegistros()
     } catch {
@@ -665,6 +707,122 @@ export default function PacienteDetalhe() {
     if (podeVerCirurgias && id) carregarCirurgias()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [podeVerCirurgias, id])
+
+  // --- Documentos (emissão rápida de receita/pedido de exames, sem preencher evolução) ---
+  const [receitasDocs, setReceitasDocs] = useState<ReceitaResumo[]>([])
+  const [pedidosExameDocs, setPedidosExameDocs] = useState<PedidoExameResumo[]>([])
+  const [carregandoDocs, setCarregandoDocs] = useState(false)
+  const [docMedicoId, setDocMedicoId] = useState('')
+  const [docData, setDocData] = useState(hoje())
+  const [docItensReceita, setDocItensReceita] = useState<string[]>([])
+  const [docModeloReceita, setDocModeloReceita] = useState('')
+  const [docItemReceitaLivre, setDocItemReceitaLivre] = useState('')
+  const [docItensExame, setDocItensExame] = useState<string[]>([])
+  const [docModeloExame, setDocModeloExame] = useState('')
+  const [docItemExameLivre, setDocItemExameLivre] = useState('')
+  const [emitindoReceitaDoc, setEmitindoReceitaDoc] = useState(false)
+  const [emitindoExameDoc, setEmitindoExameDoc] = useState(false)
+  const [erroDoc, setErroDoc] = useState('')
+
+  function carregarDocumentos() {
+    if (!id) return
+    setCarregandoDocs(true)
+    Promise.all([prontuariosApi.listarReceitasPorPaciente(id), prontuariosApi.listarPedidosExamePorPaciente(id)])
+      .then(([r, e]) => {
+        setReceitasDocs(r)
+        setPedidosExameDocs(e)
+      })
+      .finally(() => setCarregandoDocs(false))
+  }
+
+  useEffect(() => {
+    if (podeVerDocumentos && id) carregarDocumentos()
+    if (podeEmitirDocumentos) {
+      medicosApi.listar().then(setMedicos).catch(() => {})
+      modelosReceitaApi.listar().then(setModelosReceita).catch(() => {})
+      modelosExameApi.listar().then(setModelosExame).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [podeVerDocumentos, podeEmitirDocumentos, id])
+
+  function inserirModeloReceitaNoDoc() {
+    const modelo = modelosReceita.find((m) => m.id === docModeloReceita)
+    if (!modelo) return
+    setDocItensReceita((itens) => [...itens, modelo.texto])
+    setDocModeloReceita('')
+  }
+
+  function inserirItemReceitaLivreNoDoc() {
+    if (!docItemReceitaLivre.trim()) return
+    setDocItensReceita((itens) => [...itens, docItemReceitaLivre.trim()])
+    setDocItemReceitaLivre('')
+  }
+
+  function inserirModeloExameNoDoc() {
+    const modelo = modelosExame.find((m) => m.id === docModeloExame)
+    if (!modelo) return
+    setDocItensExame((itens) => [...itens, modelo.texto])
+    setDocModeloExame('')
+  }
+
+  function inserirItemExameLivreNoDoc() {
+    if (!docItemExameLivre.trim()) return
+    setDocItensExame((itens) => [...itens, docItemExameLivre.trim()])
+    setDocItemExameLivre('')
+  }
+
+  async function emitirReceitaDoc() {
+    if (!id || !docMedicoId || docItensReceita.length === 0) {
+      setErroDoc('Selecione o médico responsável e monte a prescrição.')
+      return
+    }
+    setErroDoc('')
+    setEmitindoReceitaDoc(true)
+    try {
+      const criado = await prontuariosApi.criar({
+        paciente_id: id,
+        medico_id: docMedicoId,
+        data: docData,
+        queixa: '',
+        diagnostico: '',
+        prescricao: docItensReceita.join('\n\n'),
+      })
+      setDocItensReceita([])
+      carregarDocumentos()
+      await prontuariosApi.abrirReceitaPdf(criado.id).catch(() => {})
+    } catch {
+      setErroDoc('Não foi possível emitir a receita.')
+    } finally {
+      setEmitindoReceitaDoc(false)
+    }
+  }
+
+  async function emitirExameDoc() {
+    if (!id || !docMedicoId || docItensExame.length === 0) {
+      setErroDoc('Selecione o médico responsável e monte o pedido de exames.')
+      return
+    }
+    setErroDoc('')
+    setEmitindoExameDoc(true)
+    try {
+      const criado = await prontuariosApi.criar({
+        paciente_id: id,
+        medico_id: docMedicoId,
+        data: docData,
+        queixa: '',
+        diagnostico: '',
+        prescricao: '',
+        pedido_exames: docItensExame.join('\n\n'),
+      })
+      setDocItensExame([])
+      carregarDocumentos()
+      await prontuariosApi.abrirPedidoExamesPdf(criado.id).catch(() => {})
+    } catch {
+      setErroDoc('Não foi possível emitir o pedido de exames.')
+    } finally {
+      setEmitindoExameDoc(false)
+    }
+  }
 
   async function baixarRelatorioCirurgia(c: Cirurgia) {
     try {
@@ -979,6 +1137,56 @@ export default function PacienteDetalhe() {
                       </ul>
                     )}
                   </div>
+                  <div>
+                    <Label>Pedido de exames</Label>
+                    {modelosExame.length > 0 && (
+                      <div className="flex gap-2 mb-2">
+                        <Select value={modeloExameParaInserir} onChange={(e) => setModeloExameParaInserir(e.target.value)} className="flex-1">
+                          <option value="">Selecione um modelo de exame...</option>
+                          {modelosExame.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.nome}
+                            </option>
+                          ))}
+                        </Select>
+                        <Button variant="secondary" onClick={inserirModeloExameNoPedido} disabled={!modeloExameParaInserir}>
+                          + Inserir
+                        </Button>
+                      </div>
+                    )}
+                    <div className="flex gap-2 mb-2">
+                      <Input
+                        placeholder="Ou digite um exame..."
+                        value={itemExameLivre}
+                        onChange={(e) => setItemExameLivre(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button variant="secondary" onClick={inserirItemExameLivre} disabled={!itemExameLivre.trim()}>
+                        + Inserir
+                      </Button>
+                    </div>
+                    {itensPedidoExames.length === 0 ? (
+                      <p className="text-xs text-slate-400">Nenhum exame inserido ainda — selecione um modelo ou digite um exame acima.</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {itensPedidoExames.map((item, i) => (
+                          <li
+                            key={i}
+                            className="flex items-start justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700"
+                          >
+                            <span className="whitespace-pre-wrap">{item}</span>
+                            <button
+                              type="button"
+                              onClick={() => removerItemExame(i)}
+                              className="text-slate-400 hover:text-red-600 shrink-0"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </>
               )}
               <div>
@@ -1040,6 +1248,23 @@ export default function PacienteDetalhe() {
                         className="text-xs font-medium text-brand-700 hover:text-brand-800 whitespace-nowrap shrink-0"
                       >
                         Baixar receita
+                      </button>
+                    </p>
+                  )}
+                  {r.pedido_exames && (
+                    <p className="text-sm text-slate-600 flex items-start justify-between gap-2">
+                      <span>
+                        <span className="font-medium text-slate-700 inline-flex items-center gap-1">
+                          <FlaskConical className="h-3.5 w-3.5" /> Pedido de exames:
+                        </span>{' '}
+                        {r.pedido_exames}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => prontuariosApi.abrirPedidoExamesPdf(r.id).catch(() => alert('Erro ao gerar o pedido de exames.'))}
+                        className="text-xs font-medium text-brand-700 hover:text-brand-800 whitespace-nowrap shrink-0"
+                      >
+                        Baixar pedido
                       </button>
                     </p>
                   )}
@@ -1391,6 +1616,218 @@ export default function PacienteDetalhe() {
                   </div>
                 </Card>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {aba === 'documentos' && podeVerDocumentos && (
+        <div className="space-y-6">
+          {podeEmitirDocumentos && (
+            <Card className="p-5 space-y-4">
+              <div>
+                <p className="font-medium text-slate-800">Emitir documento</p>
+                <p className="text-xs text-slate-400">
+                  Emita receita ou pedido de exames sem precisar registrar queixa/diagnóstico/evolução — útil quando é só para imprimir e
+                  entregar ao paciente.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Médico responsável</Label>
+                  <Select value={docMedicoId} onChange={(e) => setDocMedicoId(e.target.value)}>
+                    <option value="">Selecione...</option>
+                    {medicos.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        Dr(a). {m.nome}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <Label>Data</Label>
+                  <Input type="date" value={docData} onChange={(e) => setDocData(e.target.value)} />
+                </div>
+              </div>
+
+              {erroDoc && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erroDoc}</p>}
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="border border-slate-200 rounded-lg p-3 space-y-2">
+                  <p className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                    <FileText className="h-4 w-4" /> Receita
+                  </p>
+                  {modelosReceita.length > 0 && (
+                    <div className="flex gap-2">
+                      <Select value={docModeloReceita} onChange={(e) => setDocModeloReceita(e.target.value)} className="flex-1">
+                        <option value="">Selecione um modelo...</option>
+                        {modelosReceita.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.nome}
+                          </option>
+                        ))}
+                      </Select>
+                      <Button variant="secondary" onClick={inserirModeloReceitaNoDoc} disabled={!docModeloReceita}>
+                        + Inserir
+                      </Button>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Ou digite um item..."
+                      value={docItemReceitaLivre}
+                      onChange={(e) => setDocItemReceitaLivre(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="secondary" onClick={inserirItemReceitaLivreNoDoc} disabled={!docItemReceitaLivre.trim()}>
+                      + Inserir
+                    </Button>
+                  </div>
+                  {docItensReceita.length === 0 ? (
+                    <p className="text-xs text-slate-400">Nenhum item inserido ainda.</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {docItensReceita.map((item, i) => (
+                        <li
+                          key={i}
+                          className="flex items-start justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700"
+                        >
+                          <span className="whitespace-pre-wrap">{item}</span>
+                          <button
+                            type="button"
+                            onClick={() => setDocItensReceita((itens) => itens.filter((_, idx) => idx !== i))}
+                            className="text-slate-400 hover:text-red-600 shrink-0"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={emitirReceitaDoc}
+                      disabled={emitindoReceitaDoc || !docMedicoId || docItensReceita.length === 0}
+                    >
+                      {emitindoReceitaDoc ? 'Emitindo...' : 'Emitir receita'}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 rounded-lg p-3 space-y-2">
+                  <p className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                    <FlaskConical className="h-4 w-4" /> Pedido de exames
+                  </p>
+                  {modelosExame.length > 0 && (
+                    <div className="flex gap-2">
+                      <Select value={docModeloExame} onChange={(e) => setDocModeloExame(e.target.value)} className="flex-1">
+                        <option value="">Selecione um modelo...</option>
+                        {modelosExame.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.nome}
+                          </option>
+                        ))}
+                      </Select>
+                      <Button variant="secondary" onClick={inserirModeloExameNoDoc} disabled={!docModeloExame}>
+                        + Inserir
+                      </Button>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Ou digite um exame..."
+                      value={docItemExameLivre}
+                      onChange={(e) => setDocItemExameLivre(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="secondary" onClick={inserirItemExameLivreNoDoc} disabled={!docItemExameLivre.trim()}>
+                      + Inserir
+                    </Button>
+                  </div>
+                  {docItensExame.length === 0 ? (
+                    <p className="text-xs text-slate-400">Nenhum exame inserido ainda.</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {docItensExame.map((item, i) => (
+                        <li
+                          key={i}
+                          className="flex items-start justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700"
+                        >
+                          <span className="whitespace-pre-wrap">{item}</span>
+                          <button
+                            type="button"
+                            onClick={() => setDocItensExame((itens) => itens.filter((_, idx) => idx !== i))}
+                            className="text-slate-400 hover:text-red-600 shrink-0"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="flex justify-end">
+                    <Button onClick={emitirExameDoc} disabled={emitindoExameDoc || !docMedicoId || docItensExame.length === 0}>
+                      {emitindoExameDoc ? 'Emitindo...' : 'Emitir pedido de exames'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {carregandoDocs ? (
+            <p className="text-sm text-slate-400">Carregando...</p>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-600 mb-2">Receitas emitidas</p>
+                {receitasDocs.length === 0 ? (
+                  <EmptyState text="Nenhuma receita emitida ainda." icon={FileText} />
+                ) : (
+                  <div className="space-y-2">
+                    {receitasDocs.map((r) => (
+                      <Card key={r.id} className="p-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{formatarData(r.data)}</p>
+                          <p className="text-xs text-slate-400">Dr(a). {r.medico_nome}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => prontuariosApi.abrirReceitaPdf(r.id).catch(() => alert('Erro ao gerar a receita.'))}
+                          className="flex items-center gap-1.5 text-xs font-medium text-brand-700 hover:text-brand-800 whitespace-nowrap"
+                        >
+                          <Printer className="h-3.5 w-3.5" /> Imprimir
+                        </button>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-slate-600 mb-2">Pedidos de exames emitidos</p>
+                {pedidosExameDocs.length === 0 ? (
+                  <EmptyState text="Nenhum pedido de exames emitido ainda." icon={FlaskConical} />
+                ) : (
+                  <div className="space-y-2">
+                    {pedidosExameDocs.map((p) => (
+                      <Card key={p.id} className="p-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{formatarData(p.data)}</p>
+                          <p className="text-xs text-slate-400">Dr(a). {p.medico_nome}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => prontuariosApi.abrirPedidoExamesPdf(p.id).catch(() => alert('Erro ao gerar o pedido de exames.'))}
+                          className="flex items-center gap-1.5 text-xs font-medium text-brand-700 hover:text-brand-800 whitespace-nowrap"
+                        >
+                          <Printer className="h-3.5 w-3.5" /> Imprimir
+                        </button>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

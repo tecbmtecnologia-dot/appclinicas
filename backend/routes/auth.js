@@ -2,6 +2,7 @@ import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { db } from '../db.js'
 import { assinarToken, requireAuth } from '../auth.js'
+import { uploadFotoUsuario } from '../upload.js'
 
 const router = Router()
 
@@ -43,13 +44,17 @@ router.post('/login', (req, res) => {
       cargo: usuario.cargo,
       clinica_id: usuario.clinica_id,
       medico_id: usuario.medico_id,
+      sexo: usuario.sexo,
+      foto_url: usuario.foto_url,
       clinica: clinicaPublica(clinica),
     },
   })
 })
 
 router.get('/me', requireAuth, (req, res) => {
-  const usuario = db.prepare('SELECT id, nome, email, role, cargo, clinica_id, medico_id, ativo FROM usuarios WHERE id = ?').get(req.usuario.id)
+  const usuario = db
+    .prepare('SELECT id, nome, email, role, cargo, clinica_id, medico_id, sexo, foto_url, ativo FROM usuarios WHERE id = ?')
+    .get(req.usuario.id)
   if (!usuario || !usuario.ativo) return res.status(401).json({ error: 'Usuário não encontrado' })
   const clinica = usuario.clinica_id ? db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
   res.json({ ...usuario, clinica: clinicaPublica(clinica) })
@@ -59,7 +64,7 @@ router.put('/me', requireAuth, (req, res) => {
   const existente = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.usuario.id)
   if (!existente) return res.status(404).json({ error: 'Usuário não encontrado' })
 
-  const { nome, email, senha } = req.body
+  const { nome, email, senha, sexo } = req.body
   if (senha && senha.length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres' })
 
   const emailNormalizado = email ? String(email).toLowerCase() : existente.email
@@ -72,12 +77,14 @@ router.put('/me', requireAuth, (req, res) => {
     nome: nome || existente.nome,
     email: emailNormalizado,
     senha_hash: senha ? bcrypt.hashSync(senha, 10) : existente.senha_hash,
+    sexo: sexo !== undefined ? sexo || null : existente.sexo,
   }
 
-  db.prepare('UPDATE usuarios SET nome=?, email=?, senha_hash=? WHERE id=?').run(
+  db.prepare('UPDATE usuarios SET nome=?, email=?, senha_hash=?, sexo=? WHERE id=?').run(
     merged.nome,
     merged.email,
     merged.senha_hash,
+    merged.sexo,
     existente.id,
   )
 
@@ -90,9 +97,21 @@ router.put('/me', requireAuth, (req, res) => {
     cargo: existente.cargo,
     clinica_id: existente.clinica_id,
     medico_id: existente.medico_id,
+    sexo: merged.sexo,
     ativo: existente.ativo,
     clinica: clinicaPublica(clinica),
   })
+})
+
+router.post('/me/foto', requireAuth, uploadFotoUsuario.single('foto'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Envie um arquivo de imagem' })
+  const fotoUrl = `/uploads/usuarios/${req.file.filename}`
+  db.prepare('UPDATE usuarios SET foto_url = ? WHERE id = ?').run(fotoUrl, req.usuario.id)
+  const usuario = db
+    .prepare('SELECT id, nome, email, role, cargo, clinica_id, medico_id, sexo, foto_url, ativo FROM usuarios WHERE id = ?')
+    .get(req.usuario.id)
+  const clinica = usuario.clinica_id ? db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
+  res.json({ ...usuario, clinica: clinicaPublica(clinica) })
 })
 
 export default router

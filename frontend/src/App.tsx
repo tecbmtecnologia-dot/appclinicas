@@ -26,12 +26,14 @@ import Comissoes from './pages/financeiro/Comissoes'
 import PainelDono from './pages/PainelDono'
 import PerfisInstalacao from './pages/configuracoes/PerfisInstalacao'
 import ModelosReceita from './pages/configuracoes/ModelosReceita'
+import ModelosExame from './pages/configuracoes/ModelosExame'
 import ModeloContrato from './pages/configuracoes/ModeloContrato'
 import Estoque from './pages/estoque/Estoque'
 import ItensCirurgia from './pages/configuracoes/ItensCirurgia'
 import TiposProcedimento from './pages/configuracoes/TiposProcedimento'
 import AgendaFisioterapia from './pages/fisioterapia/AgendaFisioterapia'
 import Receitas from './pages/receitas/Receitas'
+import PedidosExame from './pages/exames/PedidosExame'
 import Instalar from './pages/instalar/Instalar'
 import Relatorios from './pages/relatorios/Relatorios'
 import { estaEmModoKiosk } from './lib/standalone'
@@ -75,7 +77,11 @@ function App() {
               <Route path="/painel-clinica" element={<PainelDono />} />
             </Route>
             <Route path="/reunioes" element={<Reunioes />} />
-            <Route path="/receitas" element={<Receitas />} />
+            <Route element={<RequireRole roles={['admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'financeiro']} />}>
+              <Route path="/receitas" element={<Receitas />} />
+              <Route path="/exames" element={<PedidosExame />} />
+            </Route>
+            <Route path="/meu-perfil" element={<MeuPerfil />} />
             <Route path="/reunioes/:id/sala" element={<SalaReuniao />} />
             <Route element={<RequireRole roles={['admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'pj']} />}>
               <Route path="/cirurgias" element={<Cirurgias />} />
@@ -86,7 +92,7 @@ function App() {
             <Route element={<RequireRole roles={['admin', 'financeiro', 'medico']} />}>
               <Route path="/financeiro" element={<Financeiro />} />
             </Route>
-            <Route element={<RequireRole roles={['admin', 'financeiro', 'pj']} />}>
+            <Route element={<RequireRole roles={['admin', 'financeiro', 'pj', 'coordenador']} />}>
               <Route path="/financeiro/comissoes" element={<Comissoes />} />
             </Route>
             <Route element={<RequireRole roles={PODE_PONTO} />}>
@@ -119,6 +125,7 @@ function App() {
               <Route path="/configuracoes/clinica" element={<MinhaClinica />} />
               <Route path="/configuracoes/perfis-instalacao" element={<PerfisInstalacao />} />
               <Route path="/configuracoes/modelos-receita" element={<ModelosReceita />} />
+              <Route path="/configuracoes/modelos-exame" element={<ModelosExame />} />
               <Route path="/configuracoes/contrato" element={<ModeloContrato />} />
               <Route path="/configuracoes/itens-cirurgia" element={<ItensCirurgia />} />
               <Route path="/configuracoes/tipos-procedimento" element={<TiposProcedimento />} />

@@ -162,6 +162,7 @@ export default function Usuarios() {
       jornada_semanal: u.jornada_semanal ?? {},
       dia_fechamento_folha: u.dia_fechamento_folha ?? 20,
       data_admissao: u.data_admissao ?? '',
+      sexo: u.sexo ?? null,
       ativo: !!u.ativo,
     })
     setFotoBlob(null)
@@ -325,6 +326,16 @@ export default function Usuarios() {
                 onChange={(e) => setForm({ ...form, cargo: e.target.value })}
                 placeholder="Ex: Fisioterapeuta, Gerente..."
               />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Sexo</Label>
+              <Select value={form.sexo ?? ''} onChange={(e) => setForm({ ...form, sexo: (e.target.value || null) as Usuario['sexo'] })}>
+                <option value="">Não informado</option>
+                <option value="feminino">Feminino</option>
+                <option value="masculino">Masculino</option>
+              </Select>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

@@ -111,7 +111,7 @@ export function gerarRelatorioCirurgiaPDF(res, { cirurgia, paciente, medico, hos
     doc.fillColor('#000')
   }
 
-  desenharRodapeContato(doc, clinica)
+  desenharRodapeContato(doc, clinica, { incluirEndereco: false })
 
   doc.end()
 }

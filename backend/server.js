@@ -36,6 +36,7 @@ import comissoesRouter from './routes/comissoes.js'
 import perfisInstalacaoRouter from './routes/perfisInstalacao.js'
 import dashboardRouter from './routes/dashboard.js'
 import modelosReceitaRouter from './routes/modelosReceita.js'
+import modelosExameRouter from './routes/modelosExame.js'
 import notasFiscaisPacienteRouter from './routes/notasFiscaisPaciente.js'
 import contratosPacienteRouter from './routes/contratosPaciente.js'
 import contratoModeloRouter from './routes/contratoModelo.js'
@@ -164,6 +165,7 @@ app.use('/api/comissoes', requireAuth, requireClinica, comissoesRouter)
 app.use('/api/perfis-instalacao', requireAuth, requireClinica, requireRole('admin'), perfisInstalacaoRouter)
 app.use('/api/dashboard', requireAuth, requireClinica, dashboardRouter)
 app.use('/api/modelos-receita', requireAuth, requireClinica, modelosReceitaRouter)
+app.use('/api/modelos-exame', requireAuth, requireClinica, modelosExameRouter)
 app.use('/api/notas-fiscais-paciente', requireAuth, requireClinica, notasFiscaisPacienteRouter)
 app.use('/api/contratos-paciente', requireAuth, requireClinica, contratosPacienteRouter)
 app.use('/api/contrato-modelo', requireAuth, requireClinica, contratoModeloRouter)

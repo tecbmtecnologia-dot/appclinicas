@@ -1,45 +1,95 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, LayoutGrid, MonitorSmartphone, Stethoscope, Users, type LucideIcon } from 'lucide-react'
+import {
+  CalendarClock,
+  CalendarDays,
+  ClipboardList,
+  LayoutGrid,
+  MonitorSmartphone,
+  Scissors,
+  Stethoscope,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
 import { Card, PageHeader } from '../components/ui'
 import { pacientesApi } from '../api/pacientes'
 import { medicosApi } from '../api/medicos'
 import { agendamentosApi } from '../api/agendamentos'
+import { compromissosApi } from '../api/compromissos'
+import { cirurgiasApi } from '../api/cirurgias'
+import { tiposProcedimentoApi } from '../api/tiposProcedimento'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Dashboard() {
   const { usuario } = useAuth()
   const ehMedico = usuario?.role === 'medico'
-  const [counts, setCounts] = useState({ pacientes: 0, medicos: 0, hoje: 0 })
+  const ehPj = usuario?.role === 'pj'
+  const [counts, setCounts] = useState({
+    pacientes: 0,
+    medicos: 0,
+    hoje: 0,
+    compromissosHoje: 0,
+    cirurgiasRealizadas: 0,
+    procedimentosHoje: 0,
+    cirurgiasHoje: 0,
+  })
   const [erro, setErro] = useState<string | null>(null)
 
   useEffect(() => {
     const hoje = new Date().toISOString().slice(0, 10)
     Promise.all([
-      pacientesApi.listar(),
-      medicosApi.listar(),
-      agendamentosApi.listar({ data: hoje, medico_id: ehMedico ? (usuario?.medico_id ?? undefined) : undefined }),
+      ehPj ? Promise.resolve([]) : pacientesApi.listar(),
+      ehPj ? Promise.resolve([]) : medicosApi.listar(),
+      ehPj ? Promise.resolve([]) : agendamentosApi.listar({ data: hoje, medico_id: ehMedico ? (usuario?.medico_id ?? undefined) : undefined }),
+      ehMedico ? compromissosApi.listar({ data: hoje }) : Promise.resolve([]),
+      ehPj ? cirurgiasApi.listar({ status: 'pronta' }) : Promise.resolve([]),
+      ehMedico ? tiposProcedimentoApi.listar() : Promise.resolve([]),
     ])
-      .then(([pacientes, medicos, agendamentosHoje]) => {
-        setCounts({ pacientes: pacientes.length, medicos: medicos.length, hoje: agendamentosHoje.length })
+      .then(([pacientes, medicos, agendamentosHoje, compromissosHoje, cirurgiasRealizadas, tiposProcedimento]) => {
+        // Distingue, dentro dos agendamentos do dia, quais são cirurgia (tipo de
+        // procedimento marcado "gera cirurgia") dos demais procedimentos —
+        // "Consultas hoje" continua contando todos, sem mudar o que já existia.
+        const idsCirurgia = new Set(tiposProcedimento.filter((t) => t.gera_cirurgia).map((t) => t.id))
+        const cirurgiasHoje = agendamentosHoje.filter((a) => a.tipo_procedimento_id && idsCirurgia.has(a.tipo_procedimento_id)).length
+        const procedimentosHoje = agendamentosHoje.filter(
+          (a) => a.tipo_procedimento_id && !idsCirurgia.has(a.tipo_procedimento_id),
+        ).length
+        setCounts({
+          pacientes: pacientes.length,
+          medicos: medicos.length,
+          hoje: agendamentosHoje.length,
+          compromissosHoje: compromissosHoje.length,
+          cirurgiasRealizadas: cirurgiasRealizadas.length,
+          procedimentosHoje,
+          cirurgiasHoje,
+        })
       })
       .catch(() => setErro('Não foi possível conectar à API. Verifique se o backend está rodando (npm run dev na pasta backend).'))
-  }, [ehMedico, usuario?.medico_id])
+  }, [ehMedico, ehPj, usuario?.medico_id])
 
-  const cards: { label: string; value: number; to: string; icon: LucideIcon }[] = ehMedico
-    ? [{ label: 'Meus agendamentos hoje', value: counts.hoje, to: '/agendamento', icon: CalendarDays }]
-    : [
-        { label: 'Pacientes cadastrados', value: counts.pacientes, to: '/administrativo/pacientes', icon: Users },
-        { label: 'Médicos cadastrados', value: counts.medicos, to: '/administrativo/medicos', icon: Stethoscope },
-        { label: 'Consultas hoje', value: counts.hoje, to: '/agendamento', icon: CalendarDays },
-      ]
+  const cards: { label: string; value: number; to: string; icon: LucideIcon }[] = ehPj
+    ? [{ label: 'Cirurgias realizadas', value: counts.cirurgiasRealizadas, to: '/cirurgias', icon: Scissors }]
+    : ehMedico
+      ? [
+          { label: 'Consultas hoje', value: counts.hoje, to: '/agendamento', icon: CalendarDays },
+          { label: 'Procedimentos hoje', value: counts.procedimentosHoje, to: '/agendamento', icon: ClipboardList },
+          { label: 'Cirurgias hoje', value: counts.cirurgiasHoje, to: '/agendamento', icon: Scissors },
+          { label: 'Compromissos hoje', value: counts.compromissosHoje, to: '/agendamento', icon: CalendarClock },
+          { label: 'Total do dia', value: counts.hoje + counts.compromissosHoje, to: '/agendamento', icon: LayoutGrid },
+        ]
+      : [
+          { label: 'Pacientes cadastrados', value: counts.pacientes, to: '/administrativo/pacientes', icon: Users },
+          { label: 'Médicos cadastrados', value: counts.medicos, to: '/administrativo/medicos', icon: Stethoscope },
+          { label: 'Consultas hoje', value: counts.hoje, to: '/agendamento', icon: CalendarDays },
+        ]
 
   const primeiroNome = usuario?.nome?.split(' ')[0]
+  const saudacao = usuario?.sexo === 'feminino' ? 'Bem-vinda' : 'Bem-vindo'
 
   return (
     <div>
       {primeiroNome && (
-        <p className="text-sm font-medium text-brand-700 mb-1">Bem-vindo, {primeiroNome}!</p>
+        <p className="text-sm font-medium text-brand-700 mb-1">{saudacao}, {primeiroNome}!</p>
       )}
       <PageHeader title="Visão geral" subtitle="Resumo rápido da clínica" icon={LayoutGrid} />
 
@@ -49,7 +99,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className={`grid grid-cols-1 ${ehMedico ? 'sm:grid-cols-1 max-w-xs' : 'sm:grid-cols-3'} gap-4 mb-8`}>
+      <div className={`grid grid-cols-1 ${ehPj ? 'sm:grid-cols-1 max-w-xs' : ehMedico ? 'sm:grid-cols-3 lg:grid-cols-5' : 'sm:grid-cols-3'} gap-4 mb-8`}>
         {cards.map((c) => (
           <Link key={c.label} to={c.to}>
             <Card className="p-5 hover:border-brand-300 hover:-translate-y-0.5 transition-all">

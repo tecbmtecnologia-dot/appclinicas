@@ -87,6 +87,7 @@ router.post('/', GESTAO, (req, res) => {
     jornada_semanal,
     dia_fechamento_folha,
     data_admissao,
+    sexo,
   } = req.body
   if (!nome || !email || !senha) return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios' })
   if (senha.length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres' })
@@ -122,8 +123,8 @@ router.post('/', GESTAO, (req, res) => {
   db.prepare(
     `INSERT INTO usuarios (id, clinica_id, nome, email, senha_hash, role, cargo, medico_id, unidade_id, carga_horaria_mensal_horas,
        carga_horaria_semanal_horas, horario_entrada, horario_inicio_intervalo, horario_fim_intervalo, horario_saida, dias_trabalho_semana,
-       jornada_semanal, dia_fechamento_folha, data_admissao)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       jornada_semanal, dia_fechamento_folha, data_admissao, sexo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     req.usuario.clinica_id,
@@ -144,6 +145,7 @@ router.post('/', GESTAO, (req, res) => {
     jornadaSemanalParaTexto(jornada_semanal),
     dia_fechamento_folha || 20,
     data_admissao || null,
+    sexo || null,
   )
 
   res.status(201).json(semSenha(db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id)))
@@ -172,6 +174,7 @@ router.put('/:id', GESTAO, (req, res) => {
     jornada_semanal,
     dia_fechamento_folha,
     data_admissao,
+    sexo,
   } = req.body
   if (role && !ROLES.includes(role)) return res.status(400).json({ error: 'Perfil inválido' })
   if (senha && senha.length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres' })
@@ -237,12 +240,13 @@ router.put('/:id', GESTAO, (req, res) => {
     jornada_semanal: jornada_semanal !== undefined ? jornadaSemanalParaTexto(jornada_semanal) : existente.jornada_semanal,
     dia_fechamento_folha: dia_fechamento_folha || existente.dia_fechamento_folha,
     data_admissao: data_admissao !== undefined ? data_admissao || null : existente.data_admissao,
+    sexo: sexo !== undefined ? sexo || null : existente.sexo,
   }
 
   db.prepare(
     `UPDATE usuarios SET nome=?, email=?, senha_hash=?, role=?, cargo=?, medico_id=?, unidade_id=?, carga_horaria_mensal_horas=?,
        carga_horaria_semanal_horas=?, ativo=?, horario_entrada=?, horario_inicio_intervalo=?, horario_fim_intervalo=?,
-       horario_saida=?, dias_trabalho_semana=?, jornada_semanal=?, dia_fechamento_folha=?, data_admissao=? WHERE id=?`,
+       horario_saida=?, dias_trabalho_semana=?, jornada_semanal=?, dia_fechamento_folha=?, data_admissao=?, sexo=? WHERE id=?`,
   ).run(
     merged.nome,
     merged.email,
@@ -262,6 +266,7 @@ router.put('/:id', GESTAO, (req, res) => {
     merged.jornada_semanal,
     merged.dia_fechamento_folha,
     merged.data_admissao,
+    merged.sexo,
     req.params.id,
   )
 
