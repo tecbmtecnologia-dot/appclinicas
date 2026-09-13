@@ -2,6 +2,11 @@
 // o Postgres apontado por DATABASE_URL. Uso:
 //   node scripts/aplicar-schema.js ../schema.postgres.sql
 //   node scripts/aplicar-schema.js ../constraints.postgres.sql
+//
+// IMPORTANTE: precisa rodar com a connection string do role "postgres" (admin),
+// não do "app_clinicas" (privilégio mínimo, usado pela aplicação em produção —
+// não tem permissão de CREATE TABLE/ALTER). Trocar temporariamente o
+// DATABASE_URL do backend/.env antes de rodar este script.
 import 'dotenv/config'
 import fs from 'node:fs'
 import path from 'node:path'
