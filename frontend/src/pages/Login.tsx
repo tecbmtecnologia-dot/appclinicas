@@ -19,7 +19,6 @@ export default function Login() {
   const { clinicaSlug } = useParams<{ clinicaSlug?: string }>()
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
-  const [lembrar, setLembrar] = useState(true)
   const [mostrarSenha, setMostrarSenha] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
@@ -47,7 +46,7 @@ export default function Login() {
     setErro(null)
     setEnviando(true)
     try {
-      await entrar(email, senha, lembrar)
+      await entrar(email, senha)
     } catch (err) {
       setErro(err instanceof ApiError ? err.message : 'Não foi possível entrar. Verifique se o backend está rodando.')
     } finally {
@@ -164,15 +163,6 @@ export default function Login() {
                     </button>
                   </div>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={lembrar}
-                    onChange={(e) => setLembrar(e.target.checked)}
-                    className="lg:accent-brand-600 lg:h-4 lg:w-4"
-                  />
-                  Manter-me conectado neste aparelho
-                </label>
                 {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{erro}</p>}
                 <Button type="submit" className="w-full" disabled={enviando}>
                   {enviando && <Loader2 className="hidden lg:inline-block h-4 w-4 animate-spin" />}

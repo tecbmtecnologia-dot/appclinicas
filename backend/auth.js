@@ -19,11 +19,11 @@ function carregarSegredo() {
 
 const SECRET = carregarSegredo()
 
-export function assinarToken(usuario, lembrar = false) {
+export function assinarToken(usuario) {
   return jwt.sign(
     { id: usuario.id, nome: usuario.nome, role: usuario.role, clinica_id: usuario.clinica_id ?? null },
     SECRET,
-    { expiresIn: lembrar ? '30d' : '12h' },
+    { expiresIn: '24h' },
   )
 }
 
