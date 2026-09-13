@@ -110,7 +110,7 @@ export default function Login() {
                 <img
                   src={clinica.logo_url}
                   alt=""
-                  className="h-16 w-16 rounded-2xl object-cover ring-1 ring-slate-200 lg:shadow-sm"
+                  className="h-24 w-24 rounded-2xl object-cover ring-1 ring-slate-200 lg:shadow-sm"
                 />
                 <span className="font-bold text-slate-900 text-xl">{clinica.nome}</span>
               </>

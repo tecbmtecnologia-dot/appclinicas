@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   BarChart3,
   Boxes,
@@ -276,6 +276,18 @@ export default function Layout() {
               Sair
             </button>
           </div>
+        </header>
+
+        <header className="hidden md:flex items-center justify-end gap-3 border-b border-slate-200 bg-white px-6 py-3 shrink-0">
+          {!ehPlataforma && <NotificationBell />}
+          {usuario && (
+            <Link
+              to="/meu-perfil"
+              className="flex items-center rounded-full px-3 py-1.5 hover:bg-slate-100 transition-colors"
+            >
+              <span className="text-sm font-medium text-slate-700">{usuario.nome}</span>
+            </Link>
+          )}
         </header>
 
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">

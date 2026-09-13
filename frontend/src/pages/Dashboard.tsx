@@ -8,6 +8,7 @@ import {
   MonitorSmartphone,
   Scissors,
   Stethoscope,
+  UserCog,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -91,7 +92,28 @@ export default function Dashboard() {
       {primeiroNome && (
         <p className="text-sm font-medium text-brand-700 mb-1">{saudacao}, {primeiroNome}!</p>
       )}
-      <PageHeader title="Visão geral" subtitle="Resumo rápido da clínica" icon={LayoutGrid} />
+      <PageHeader
+        title="Visão geral"
+        subtitle="Resumo rápido da clínica"
+        icon={LayoutGrid}
+        action={
+          usuario && (
+            <Link to="/meu-perfil" className="shrink-0 self-start -mt-4">
+              {usuario.foto_url ? (
+                <img
+                  src={usuario.foto_url}
+                  alt=""
+                  className="h-24 w-24 rounded-full object-cover ring-1 ring-slate-200 shadow-sm"
+                />
+              ) : (
+                <span className="h-24 w-24 rounded-full bg-slate-100 flex items-center justify-center ring-1 ring-slate-200">
+                  <UserCog className="h-10 w-10 text-slate-400" />
+                </span>
+              )}
+            </Link>
+          )
+        }
+      />
 
       {erro && (
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
