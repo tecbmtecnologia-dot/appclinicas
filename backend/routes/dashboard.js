@@ -22,7 +22,7 @@ function limitesSemanaAtual() {
   return { inicio: fmt(segunda), fim: fmt(domingo) }
 }
 
-router.get('/resumo', (req, res) => {
+router.get('/resumo', async (req, res) => {
   const clinicaId = req.usuario.clinica_id
   const hoje = new Date()
   const anoAtual = String(hoje.getFullYear())
@@ -32,41 +32,45 @@ router.get('/resumo', (req, res) => {
   const { mes, ano } = req.query
   const referenciaFinanceiro = mes && ano ? `${ano}-${String(mes).padStart(2, '0')}` : mesAtual
 
-  const contarCirurgias = (condicaoData, ...params) =>
-    db
+  const contarCirurgias = async (condicaoData, ...params) => {
+    const row = await db
       .prepare(
         `SELECT COUNT(*) AS total FROM cirurgias WHERE clinica_id = ? AND status = 'pronta' AND ${condicaoData}`,
       )
-      .get(clinicaId, ...params).total
+      .get(clinicaId, ...params)
+    return row.total
+  }
 
   const cirurgias = {
-    semana: contarCirurgias(
+    semana: await contarCirurgias(
       `substr(COALESCE(data_prevista, created_at), 1, 10) BETWEEN ? AND ?`,
       inicioSemana,
       fimSemana,
     ),
-    mes: contarCirurgias(`substr(COALESCE(data_prevista, created_at), 1, 7) = ?`, mesAtual),
-    ano: contarCirurgias(`substr(COALESCE(data_prevista, created_at), 1, 4) = ?`, anoAtual),
+    mes: await contarCirurgias(`substr(COALESCE(data_prevista, created_at), 1, 7) = ?`, mesAtual),
+    ano: await contarCirurgias(`substr(COALESCE(data_prevista, created_at), 1, 4) = ?`, anoAtual),
   }
 
-  const contarConsultas = (condicaoData, ...params) =>
-    db.prepare(`SELECT COUNT(*) AS total FROM agendamentos WHERE clinica_id = ? AND ${condicaoData}`).get(clinicaId, ...params).total
+  const contarConsultas = async (condicaoData, ...params) => {
+    const row = await db.prepare(`SELECT COUNT(*) AS total FROM agendamentos WHERE clinica_id = ? AND ${condicaoData}`).get(clinicaId, ...params)
+    return row.total
+  }
 
   const consultas = {
-    semana: contarConsultas(`substr(data_hora, 1, 10) BETWEEN ? AND ?`, inicioSemana, fimSemana),
-    mes: contarConsultas(`substr(data_hora, 1, 7) = ?`, mesAtual),
-    ano: contarConsultas(`substr(data_hora, 1, 4) = ?`, anoAtual),
-    concluidas_mes: contarConsultas(`status = 'concluido' AND substr(data_hora, 1, 7) = ?`, mesAtual),
+    semana: await contarConsultas(`substr(data_hora, 1, 10) BETWEEN ? AND ?`, inicioSemana, fimSemana),
+    mes: await contarConsultas(`substr(data_hora, 1, 7) = ?`, mesAtual),
+    ano: await contarConsultas(`substr(data_hora, 1, 4) = ?`, anoAtual),
+    concluidas_mes: await contarConsultas(`status = 'concluido' AND substr(data_hora, 1, 7) = ?`, mesAtual),
   }
 
-  const { total: pacientesTotal } = db.prepare('SELECT COUNT(*) AS total FROM pacientes WHERE clinica_id = ?').get(clinicaId)
+  const { total: pacientesTotal } = await db.prepare('SELECT COUNT(*) AS total FROM pacientes WHERE clinica_id = ?').get(clinicaId)
 
-  const { recebido } = db
+  const { recebido } = await db
     .prepare(
       `SELECT COALESCE(SUM(valor), 0) AS recebido FROM pagamentos WHERE clinica_id = ? AND status = 'pago' AND substr(data_pagamento, 1, 7) = ?`,
     )
     .get(clinicaId, referenciaFinanceiro)
-  const { gasto } = db
+  const { gasto } = await db
     .prepare(
       `SELECT COALESCE(SUM(valor), 0) AS gasto FROM despesas_clinica WHERE clinica_id = ? AND status = 'pago' AND substr(data, 1, 7) = ?`,
     )

@@ -26,7 +26,7 @@ function podeVerTodas(usuario) {
   return usuario.role !== 'pj'
 }
 
-router.get('/', LEITURA, (req, res) => {
+router.get('/', LEITURA, async (req, res) => {
   const { data, mes, paciente_id } = req.query
   let sql = SELECT_JOIN + ' WHERE s.clinica_id = ?'
   const params = [req.usuario.clinica_id]
@@ -47,33 +47,33 @@ router.get('/', LEITURA, (req, res) => {
     params.push(paciente_id)
   }
   sql += ' ORDER BY s.data_hora ASC'
-  res.json(db.prepare(sql).all(...params))
+  res.json(await db.prepare(sql).all(...params))
 })
 
-router.post('/', ESCRITA, (req, res) => {
+router.post('/', ESCRITA, async (req, res) => {
   const { paciente_id, data_hora, observacoes } = req.body
   if (!paciente_id || !data_hora) {
     return res.status(400).json({ error: 'paciente_id e data_hora são obrigatórios' })
   }
-  const paciente = db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(paciente_id, req.usuario.clinica_id)
+  const paciente = await db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(paciente_id, req.usuario.clinica_id)
   if (!paciente) return res.status(400).json({ error: 'Paciente inválido' })
 
   const id = nanoid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO sessoes_fisioterapia (id, clinica_id, paciente_id, usuario_id, data_hora, observacoes)
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, req.usuario.clinica_id, paciente_id, req.usuario.id, data_hora, observacoes || null)
-  res.status(201).json(db.prepare(SELECT_JOIN + ' WHERE s.id = ?').get(id))
+  res.status(201).json(await db.prepare(SELECT_JOIN + ' WHERE s.id = ?').get(id))
 })
 
-router.put('/:id', ESCRITA, (req, res) => {
-  const existente = db.prepare('SELECT * FROM sessoes_fisioterapia WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.put('/:id', ESCRITA, async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM sessoes_fisioterapia WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Sessão não encontrada' })
   if (!podeVerTodas(req.usuario) && existente.usuario_id !== req.usuario.id) {
     return res.status(403).json({ error: 'Sem permissão para editar essa sessão' })
   }
   if (req.body.paciente_id) {
-    const paciente = db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.body.paciente_id, req.usuario.clinica_id)
+    const paciente = await db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.body.paciente_id, req.usuario.clinica_id)
     if (!paciente) return res.status(400).json({ error: 'Paciente inválido' })
   }
   const merged = {
@@ -81,22 +81,22 @@ router.put('/:id', ESCRITA, (req, res) => {
     data_hora: req.body.data_hora ?? existente.data_hora,
     observacoes: req.body.observacoes !== undefined ? req.body.observacoes || null : existente.observacoes,
   }
-  db.prepare('UPDATE sessoes_fisioterapia SET paciente_id=?, data_hora=?, observacoes=? WHERE id=?').run(
+  await db.prepare('UPDATE sessoes_fisioterapia SET paciente_id=?, data_hora=?, observacoes=? WHERE id=?').run(
     merged.paciente_id,
     merged.data_hora,
     merged.observacoes,
     req.params.id,
   )
-  res.json(db.prepare(SELECT_JOIN + ' WHERE s.id = ?').get(req.params.id))
+  res.json(await db.prepare(SELECT_JOIN + ' WHERE s.id = ?').get(req.params.id))
 })
 
-router.delete('/:id', ESCRITA, (req, res) => {
-  const existente = db.prepare('SELECT * FROM sessoes_fisioterapia WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.delete('/:id', ESCRITA, async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM sessoes_fisioterapia WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Sessão não encontrada' })
   if (!podeVerTodas(req.usuario) && existente.usuario_id !== req.usuario.id) {
     return res.status(403).json({ error: 'Sem permissão para remover essa sessão' })
   }
-  db.prepare('DELETE FROM sessoes_fisioterapia WHERE id = ?').run(req.params.id)
+  await db.prepare('DELETE FROM sessoes_fisioterapia WHERE id = ?').run(req.params.id)
   res.status(204).end()
 })
 

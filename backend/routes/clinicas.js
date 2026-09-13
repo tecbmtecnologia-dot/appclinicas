@@ -17,31 +17,31 @@ function gerarSlug(nome) {
     .replace(/(^-|-$)/g, '')
 }
 
-function slugUnico(base) {
+async function slugUnico(base) {
   const raiz = base || nanoid(8)
   let slug = raiz
   let i = 1
-  while (db.prepare('SELECT id FROM clinicas WHERE slug = ?').get(slug)) {
+  while (await db.prepare('SELECT id FROM clinicas WHERE slug = ?').get(slug)) {
     i += 1
     slug = `${raiz}-${i}`
   }
   return slug
 }
 
-router.get('/', (req, res) => {
-  const rows = db
+router.get('/', async (req, res) => {
+  const rows = await db
     .prepare(
       `SELECT c.*,
         (SELECT COUNT(*) FROM usuarios u WHERE u.clinica_id = c.id) AS total_usuarios,
         (SELECT COUNT(*) FROM medicos m WHERE m.clinica_id = c.id) AS total_medicos,
         (SELECT COUNT(*) FROM pacientes p WHERE p.clinica_id = c.id) AS total_pacientes
-       FROM clinicas c ORDER BY c.nome COLLATE NOCASE`,
+       FROM clinicas c ORDER BY lower(c.nome)`,
     )
     .all()
   res.json(rows.map(comEspecialidadesArray))
 })
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { nome, logo_url, cor_primaria, cnpj, endereco, especialidades, modulos_opcionais, latitude, longitude, raio_metros, admin_nome, admin_email, admin_senha } = req.body
   if (!nome) return res.status(400).json({ error: 'Nome da clínica é obrigatório' })
 
@@ -54,13 +54,13 @@ router.post('/', (req, res) => {
   }
   const emailNormalizado = admin_email ? String(admin_email).toLowerCase() : null
   if (emailNormalizado) {
-    const existente = db.prepare('SELECT id FROM usuarios WHERE email = ?').get(emailNormalizado)
+    const existente = await db.prepare('SELECT id FROM usuarios WHERE email = ?').get(emailNormalizado)
     if (existente) return res.status(409).json({ error: 'Já existe um usuário com este e-mail' })
   }
 
   const id = nanoid()
-  const slug = slugUnico(gerarSlug(nome))
-  db.prepare(
+  const slug = await slugUnico(gerarSlug(nome))
+  await db.prepare(
     `INSERT INTO clinicas (id, nome, slug, logo_url, cor_primaria, cnpj, endereco, especialidades, modulos_opcionais, latitude, longitude, raio_metros)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -79,16 +79,16 @@ router.post('/', (req, res) => {
   )
 
   if (emailNormalizado) {
-    db.prepare(
+    await db.prepare(
       `INSERT INTO usuarios (id, clinica_id, nome, email, senha_hash, role) VALUES (?, ?, ?, ?, ?, 'admin')`,
     ).run(nanoid(), id, admin_nome, emailNormalizado, bcrypt.hashSync(admin_senha, 10))
   }
 
-  res.status(201).json(comEspecialidadesArray(db.prepare('SELECT * FROM clinicas WHERE id = ?').get(id)))
+  res.status(201).json(comEspecialidadesArray(await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(id)))
 })
 
-router.put('/:id', (req, res) => {
-  const existente = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)
+router.put('/:id', async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)
   if (!existente) return res.status(404).json({ error: 'Clínica não encontrada' })
 
   let slug = existente.slug
@@ -96,7 +96,7 @@ router.put('/:id', (req, res) => {
     const slugLimpo = gerarSlug(req.body.slug)
     if (!slugLimpo) return res.status(400).json({ error: 'Link inválido' })
     if (slugLimpo !== existente.slug) {
-      const emUso = db.prepare('SELECT id FROM clinicas WHERE slug = ? AND id != ?').get(slugLimpo, req.params.id)
+      const emUso = await db.prepare('SELECT id FROM clinicas WHERE slug = ? AND id != ?').get(slugLimpo, req.params.id)
       if (emUso) return res.status(409).json({ error: 'Já existe uma clínica usando este link' })
       slug = slugLimpo
     }
@@ -120,7 +120,7 @@ router.put('/:id', (req, res) => {
     ativo: req.body.ativo !== undefined ? (req.body.ativo ? 1 : 0) : existente.ativo,
   }
 
-  db.prepare(
+  await db.prepare(
     `UPDATE clinicas SET nome=?, slug=?, logo_url=?, cor_primaria=?, cnpj=?, endereco=?, especialidades=?, modulos_opcionais=?, latitude=?, longitude=?, raio_metros=?, ativo=? WHERE id=?`,
   ).run(
     merged.nome,
@@ -138,17 +138,17 @@ router.put('/:id', (req, res) => {
     req.params.id,
   )
 
-  res.json(comEspecialidadesArray(db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)))
+  res.json(comEspecialidadesArray(await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)))
 })
 
-router.post('/:id/logo', uploadLogo.single('logo'), (req, res) => {
-  const existente = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)
+router.post('/:id/logo', uploadLogo.single('logo'), async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)
   if (!existente) return res.status(404).json({ error: 'Clínica não encontrada' })
   if (!req.file) return res.status(400).json({ error: 'Envie um arquivo de imagem' })
 
   const logoUrl = `/uploads/logos/${req.file.filename}`
-  db.prepare('UPDATE clinicas SET logo_url = ? WHERE id = ?').run(logoUrl, req.params.id)
-  res.json(comEspecialidadesArray(db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)))
+  await db.prepare('UPDATE clinicas SET logo_url = ? WHERE id = ?').run(logoUrl, req.params.id)
+  res.json(comEspecialidadesArray(await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)))
 })
 
 router.use(
@@ -160,13 +160,13 @@ router.use(
   unidadesRouter,
 )
 
-router.delete('/:id', (req, res) => {
-  const { total } = db.prepare('SELECT COUNT(*) AS total FROM usuarios WHERE clinica_id = ?').get(req.params.id)
+router.delete('/:id', async (req, res) => {
+  const { total } = await db.prepare('SELECT COUNT(*) AS total FROM usuarios WHERE clinica_id = ?').get(req.params.id)
   if (total > 0) {
     return res.status(409).json({ error: 'Remova os usuários desta clínica antes de excluí-la' })
   }
-  db.prepare('DELETE FROM unidades WHERE clinica_id = ?').run(req.params.id)
-  db.prepare('DELETE FROM clinicas WHERE id = ?').run(req.params.id)
+  await db.prepare('DELETE FROM unidades WHERE clinica_id = ?').run(req.params.id)
+  await db.prepare('DELETE FROM clinicas WHERE id = ?').run(req.params.id)
   res.status(204).end()
 })
 

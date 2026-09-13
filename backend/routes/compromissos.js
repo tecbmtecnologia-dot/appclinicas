@@ -13,18 +13,18 @@ const SELECT_JOIN = `
   LEFT JOIN medicos m ON m.id = c.medico_id
 `
 
-function horarioOcupado(clinicaId, medico_id, data_hora, ignorarCompromissoId) {
-  const compromisso = db
+async function horarioOcupado(clinicaId, medico_id, data_hora, ignorarCompromissoId) {
+  const compromisso = await db
     .prepare('SELECT id FROM compromissos WHERE clinica_id = ? AND medico_id = ? AND data_hora = ? AND id != ?')
     .get(clinicaId, medico_id, data_hora, ignorarCompromissoId ?? '')
   if (compromisso) return true
-  const consulta = db
+  const consulta = await db
     .prepare(`SELECT id FROM agendamentos WHERE clinica_id = ? AND medico_id = ? AND data_hora = ? AND status != 'cancelado'`)
     .get(clinicaId, medico_id, data_hora)
   return Boolean(consulta)
 }
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { data, mes } = req.query
   // médico só enxerga os próprios compromissos, mesmo que peça outro medico_id
   const medicoId = req.usuario.role === 'medico' ? req.usuario.medico_id : req.query.medico_id
@@ -43,48 +43,48 @@ router.get('/', (req, res) => {
     params.push(medicoId)
   }
   sql += ' ORDER BY c.data_hora ASC'
-  res.json(db.prepare(sql).all(...params))
+  res.json(await db.prepare(sql).all(...params))
 })
 
-router.post('/', ESCRITA, (req, res) => {
+router.post('/', ESCRITA, async (req, res) => {
   const { medico_id, titulo, data_hora, observacoes } = req.body
   if (!medico_id || !titulo || !data_hora) {
     return res.status(400).json({ error: 'medico_id, titulo e data_hora são obrigatórios' })
   }
-  const medico = db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, req.usuario.clinica_id)
+  const medico = await db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, req.usuario.clinica_id)
   if (!medico) return res.status(400).json({ error: 'Médico inválido' })
-  if (horarioOcupado(req.usuario.clinica_id, medico_id, data_hora)) {
+  if (await horarioOcupado(req.usuario.clinica_id, medico_id, data_hora)) {
     return res.status(409).json({ error: 'Esse médico já tem uma consulta ou compromisso marcado nesse horário.' })
   }
   const id = nanoid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO compromissos (id, clinica_id, medico_id, titulo, data_hora, observacoes, criado_por) VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, req.usuario.clinica_id, medico_id, titulo, data_hora, observacoes ?? null, req.usuario.id)
-  res.status(201).json(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(id))
+  res.status(201).json(await db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(id))
 })
 
-router.put('/:id', ESCRITA, (req, res) => {
-  const existente = db.prepare('SELECT * FROM compromissos WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.put('/:id', ESCRITA, async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM compromissos WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Compromisso não encontrado' })
   const merged = { ...existente, ...req.body }
   if (
     (merged.data_hora !== existente.data_hora || merged.medico_id !== existente.medico_id) &&
-    horarioOcupado(req.usuario.clinica_id, merged.medico_id, merged.data_hora, req.params.id)
+    (await horarioOcupado(req.usuario.clinica_id, merged.medico_id, merged.data_hora, req.params.id))
   ) {
     return res.status(409).json({ error: 'Esse médico já tem uma consulta ou compromisso marcado nesse horário.' })
   }
-  db.prepare('UPDATE compromissos SET medico_id=?, titulo=?, data_hora=?, observacoes=? WHERE id=?').run(
+  await db.prepare('UPDATE compromissos SET medico_id=?, titulo=?, data_hora=?, observacoes=? WHERE id=?').run(
     merged.medico_id,
     merged.titulo,
     merged.data_hora,
     merged.observacoes,
     req.params.id,
   )
-  res.json(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id))
+  res.json(await db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id))
 })
 
-router.delete('/:id', ESCRITA, (req, res) => {
-  db.prepare('DELETE FROM compromissos WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
+router.delete('/:id', ESCRITA, async (req, res) => {
+  await db.prepare('DELETE FROM compromissos WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
   res.status(204).end()
 })
 

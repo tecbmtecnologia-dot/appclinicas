@@ -56,19 +56,19 @@ function semSenha(usuario) {
 
 // Lista leve (id, nome, role) para qualquer funcionário da clínica escolher
 // colegas em recursos colaborativos (ex: convidar para reunião).
-router.get('/colegas', (req, res) => {
-  const rows = db
-    .prepare("SELECT id, nome, role FROM usuarios WHERE clinica_id = ? AND ativo = 1 ORDER BY nome COLLATE NOCASE")
+router.get('/colegas', async (req, res) => {
+  const rows = await db
+    .prepare("SELECT id, nome, role FROM usuarios WHERE clinica_id = ? AND ativo = 1 ORDER BY lower(nome)")
     .all(req.usuario.clinica_id)
   res.json(rows)
 })
 
-router.get('/', LEITURA, (req, res) => {
-  const rows = db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? ORDER BY nome COLLATE NOCASE').all(req.usuario.clinica_id)
+router.get('/', LEITURA, async (req, res) => {
+  const rows = await db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? ORDER BY lower(nome)').all(req.usuario.clinica_id)
   res.json(rows.map(semSenha))
 })
 
-router.post('/', GESTAO, (req, res) => {
+router.post('/', GESTAO, async (req, res) => {
   const {
     nome,
     email,
@@ -106,21 +106,21 @@ router.post('/', GESTAO, (req, res) => {
   }
 
   const emailNormalizado = String(email).toLowerCase()
-  const existente = db.prepare('SELECT id FROM usuarios WHERE email = ?').get(emailNormalizado)
+  const existente = await db.prepare('SELECT id FROM usuarios WHERE email = ?').get(emailNormalizado)
   if (existente) return res.status(409).json({ error: 'Já existe um usuário com este e-mail' })
 
   if (medico_id) {
-    const medico = db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, req.usuario.clinica_id)
+    const medico = await db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, req.usuario.clinica_id)
     if (!medico) return res.status(400).json({ error: 'Médico inválido' })
   }
   if (unidade_id) {
-    const unidade = db.prepare('SELECT id FROM unidades WHERE id = ? AND clinica_id = ?').get(unidade_id, req.usuario.clinica_id)
+    const unidade = await db.prepare('SELECT id FROM unidades WHERE id = ? AND clinica_id = ?').get(unidade_id, req.usuario.clinica_id)
     if (!unidade) return res.status(400).json({ error: 'Unidade inválida' })
   }
 
   const id = nanoid()
   const hash = bcrypt.hashSync(senha, 10)
-  db.prepare(
+  await db.prepare(
     `INSERT INTO usuarios (id, clinica_id, nome, email, senha_hash, role, cargo, medico_id, unidade_id, carga_horaria_mensal_horas,
        carga_horaria_semanal_horas, horario_entrada, horario_inicio_intervalo, horario_fim_intervalo, horario_saida, dias_trabalho_semana,
        jornada_semanal, dia_fechamento_folha, data_admissao, sexo)
@@ -148,11 +148,11 @@ router.post('/', GESTAO, (req, res) => {
     sexo || null,
   )
 
-  res.status(201).json(semSenha(db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id)))
+  res.status(201).json(semSenha(await db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id)))
 })
 
-router.put('/:id', GESTAO, (req, res) => {
-  const existente = db.prepare('SELECT * FROM usuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.put('/:id', GESTAO, async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM usuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Usuário não encontrado' })
 
   const {
@@ -193,14 +193,14 @@ router.put('/:id', GESTAO, (req, res) => {
 
   const emailNormalizado = email ? String(email).toLowerCase() : existente.email
   if (emailNormalizado !== existente.email) {
-    const duplicado = db.prepare('SELECT id FROM usuarios WHERE email = ? AND id != ?').get(emailNormalizado, req.params.id)
+    const duplicado = await db.prepare('SELECT id FROM usuarios WHERE email = ? AND id != ?').get(emailNormalizado, req.params.id)
     if (duplicado) return res.status(409).json({ error: 'Já existe um usuário com este e-mail' })
   }
 
   let medicoId = existente.medico_id
   if (medico_id !== undefined) {
     if (medico_id) {
-      const medico = db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, req.usuario.clinica_id)
+      const medico = await db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, req.usuario.clinica_id)
       if (!medico) return res.status(400).json({ error: 'Médico inválido' })
       medicoId = medico_id
     } else {
@@ -211,7 +211,7 @@ router.put('/:id', GESTAO, (req, res) => {
   let unidadeId = existente.unidade_id
   if (unidade_id !== undefined) {
     if (unidade_id) {
-      const unidade = db.prepare('SELECT id FROM unidades WHERE id = ? AND clinica_id = ?').get(unidade_id, req.usuario.clinica_id)
+      const unidade = await db.prepare('SELECT id FROM unidades WHERE id = ? AND clinica_id = ?').get(unidade_id, req.usuario.clinica_id)
       if (!unidade) return res.status(400).json({ error: 'Unidade inválida' })
       unidadeId = unidade_id
     } else {
@@ -243,7 +243,7 @@ router.put('/:id', GESTAO, (req, res) => {
     sexo: sexo !== undefined ? sexo || null : existente.sexo,
   }
 
-  db.prepare(
+  await db.prepare(
     `UPDATE usuarios SET nome=?, email=?, senha_hash=?, role=?, cargo=?, medico_id=?, unidade_id=?, carga_horaria_mensal_horas=?,
        carga_horaria_semanal_horas=?, ativo=?, horario_entrada=?, horario_inicio_intervalo=?, horario_fim_intervalo=?,
        horario_saida=?, dias_trabalho_semana=?, jornada_semanal=?, dia_fechamento_folha=?, data_admissao=?, sexo=? WHERE id=?`,
@@ -270,29 +270,29 @@ router.put('/:id', GESTAO, (req, res) => {
     req.params.id,
   )
 
-  res.json(semSenha(db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id)))
+  res.json(semSenha(await db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id)))
 })
 
-router.post('/:id/foto', GESTAO, uploadFotoUsuario.single('foto'), (req, res) => {
-  const existente = db.prepare('SELECT id FROM usuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.post('/:id/foto', GESTAO, uploadFotoUsuario.single('foto'), async (req, res) => {
+  const existente = await db.prepare('SELECT id FROM usuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Usuário não encontrado' })
   if (!req.file) return res.status(400).json({ error: 'Envie um arquivo de imagem' })
   const fotoUrl = `/uploads/usuarios/${req.file.filename}`
-  db.prepare('UPDATE usuarios SET foto_url = ? WHERE id = ?').run(fotoUrl, req.params.id)
-  res.json(semSenha(db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id)))
+  await db.prepare('UPDATE usuarios SET foto_url = ? WHERE id = ?').run(fotoUrl, req.params.id)
+  res.json(semSenha(await db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id)))
 })
 
-router.delete('/:id', GESTAO, (req, res) => {
+router.delete('/:id', GESTAO, async (req, res) => {
   if (req.usuario.id === req.params.id) {
     return res.status(400).json({ error: 'Você não pode remover seu próprio usuário' })
   }
-  const { total } = db.prepare('SELECT COUNT(*) AS total FROM pontos WHERE usuario_id = ?').get(req.params.id)
+  const { total } = await db.prepare('SELECT COUNT(*) AS total FROM pontos WHERE usuario_id = ?').get(req.params.id)
   if (total > 0) {
     return res.status(409).json({
       error: 'Este usuário já tem registros de ponto — desative-o em vez de excluir, pra manter o histórico.',
     })
   }
-  db.prepare('DELETE FROM usuarios WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
+  await db.prepare('DELETE FROM usuarios WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
   res.status(204).end()
 })
 

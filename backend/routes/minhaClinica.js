@@ -6,14 +6,14 @@ import unidadesRouter from './unidades.js'
 
 const router = Router()
 
-router.get('/', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.get('/', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   if (!clinica) return res.status(404).json({ error: 'Clínica não encontrada' })
   res.json(comEspecialidadesArray(clinica))
 })
 
-router.put('/', (req, res) => {
-  const existente = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.put('/', async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Clínica não encontrada' })
 
   const TIPOS_MARCA_DAGUA = new Set(['nenhuma', 'logo', 'texto'])
@@ -37,7 +37,7 @@ router.put('/', (req, res) => {
     marca_dagua_texto: req.body.marca_dagua_texto !== undefined ? req.body.marca_dagua_texto || null : existente.marca_dagua_texto,
   }
 
-  db.prepare(
+  await db.prepare(
     `UPDATE clinicas SET nome=?, cor_primaria=?, cnpj=?, endereco=?, telefone=?, email=?, especialidades=?, latitude=?, longitude=?, raio_metros=?,
        marca_dagua_tipo=?, marca_dagua_texto=? WHERE id=?`,
   ).run(
@@ -56,23 +56,23 @@ router.put('/', (req, res) => {
     req.usuario.clinica_id,
   )
 
-  res.json(comEspecialidadesArray(db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)))
+  res.json(comEspecialidadesArray(await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)))
 })
 
-router.post('/logo', uploadLogo.single('logo'), (req, res) => {
+router.post('/logo', uploadLogo.single('logo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Envie um arquivo de imagem' })
   const logoUrl = `/uploads/logos/${req.file.filename}`
-  db.prepare('UPDATE clinicas SET logo_url = ? WHERE id = ?').run(logoUrl, req.usuario.clinica_id)
-  res.json(comEspecialidadesArray(db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)))
+  await db.prepare('UPDATE clinicas SET logo_url = ? WHERE id = ?').run(logoUrl, req.usuario.clinica_id)
+  res.json(comEspecialidadesArray(await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)))
 })
 
 // Logo separado do app/tela de login — logo_url continua exclusivo dos PDFs
 // (relatórios e receitas), decisão explícita do usuário em 2026-09-11.
-router.post('/logo-app', uploadLogo.single('logo'), (req, res) => {
+router.post('/logo-app', uploadLogo.single('logo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Envie um arquivo de imagem' })
   const logoUrl = `/uploads/logos/${req.file.filename}`
-  db.prepare('UPDATE clinicas SET logo_app_url = ? WHERE id = ?').run(logoUrl, req.usuario.clinica_id)
-  res.json(comEspecialidadesArray(db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)))
+  await db.prepare('UPDATE clinicas SET logo_app_url = ? WHERE id = ?').run(logoUrl, req.usuario.clinica_id)
+  res.json(comEspecialidadesArray(await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)))
 })
 
 router.use(

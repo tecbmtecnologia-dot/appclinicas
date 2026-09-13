@@ -12,31 +12,31 @@ const router = Router()
 const EDICAO = requireRole('admin')
 const GERACAO = requireRole('admin', 'coordenador', 'recepcao')
 
-router.get('/', EDICAO, (req, res) => {
-  const modelo = db.prepare('SELECT * FROM contrato_modelo WHERE clinica_id = ?').get(req.usuario.clinica_id)
+router.get('/', EDICAO, async (req, res) => {
+  const modelo = await db.prepare('SELECT * FROM contrato_modelo WHERE clinica_id = ?').get(req.usuario.clinica_id)
   res.json({ texto: modelo?.texto || '', updated_at: modelo?.updated_at || null })
 })
 
-router.put('/', EDICAO, (req, res) => {
+router.put('/', EDICAO, async (req, res) => {
   const { texto } = req.body
   if (typeof texto !== 'string') return res.status(400).json({ error: 'texto é obrigatório' })
 
-  const existente = db.prepare('SELECT id FROM contrato_modelo WHERE clinica_id = ?').get(req.usuario.clinica_id)
+  const existente = await db.prepare('SELECT id FROM contrato_modelo WHERE clinica_id = ?').get(req.usuario.clinica_id)
   if (existente) {
-    db.prepare('UPDATE contrato_modelo SET texto = ?, atualizado_por = ?, updated_at = datetime(\'now\') WHERE id = ?').run(
+    await db.prepare('UPDATE contrato_modelo SET texto = ?, atualizado_por = ?, updated_at = now() WHERE id = ?').run(
       texto,
       req.usuario.id,
       existente.id,
     )
   } else {
-    db.prepare('INSERT INTO contrato_modelo (id, clinica_id, texto, atualizado_por) VALUES (?, ?, ?, ?)').run(
+    await db.prepare('INSERT INTO contrato_modelo (id, clinica_id, texto, atualizado_por) VALUES (?, ?, ?, ?)').run(
       nanoid(),
       req.usuario.clinica_id,
       texto,
       req.usuario.id,
     )
   }
-  const modelo = db.prepare('SELECT * FROM contrato_modelo WHERE clinica_id = ?').get(req.usuario.clinica_id)
+  const modelo = await db.prepare('SELECT * FROM contrato_modelo WHERE clinica_id = ?').get(req.usuario.clinica_id)
   res.json({ texto: modelo.texto, updated_at: modelo.updated_at })
 })
 
@@ -60,14 +60,14 @@ function preencherModelo(texto, { paciente, clinica }) {
   })
 }
 
-router.post('/gerar/:pacienteId', GERACAO, (req, res) => {
-  const modelo = db.prepare('SELECT * FROM contrato_modelo WHERE clinica_id = ?').get(req.usuario.clinica_id)
+router.post('/gerar/:pacienteId', GERACAO, async (req, res) => {
+  const modelo = await db.prepare('SELECT * FROM contrato_modelo WHERE clinica_id = ?').get(req.usuario.clinica_id)
   if (!modelo?.texto?.trim()) return res.status(404).json({ error: 'Nenhum modelo de contrato cadastrado ainda' })
 
-  const paciente = db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
+  const paciente = await db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
   if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
 
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const texto = preencherModelo(modelo.texto, { paciente, clinica })
 
   gerarContratoPDF(res, { texto, paciente, clinica })

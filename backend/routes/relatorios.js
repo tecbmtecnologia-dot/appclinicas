@@ -21,12 +21,12 @@ import { montarReferencia, resumoComissoesClinica } from './comissoes.js'
 const router = Router()
 router.use(requireRole('admin'))
 
-function buscarRelatorioPacientes(clinicaId) {
-  const { total } = db.prepare('SELECT COUNT(*) AS total FROM pacientes WHERE clinica_id = ?').get(clinicaId)
+async function buscarRelatorioPacientes(clinicaId) {
+  const { total } = await db.prepare('SELECT COUNT(*) AS total FROM pacientes WHERE clinica_id = ?').get(clinicaId)
   return { total }
 }
 
-function buscarRelatorioCirurgias(clinicaId, { data_inicio, data_fim }) {
+async function buscarRelatorioCirurgias(clinicaId, { data_inicio, data_fim }) {
   let filtroData = ''
   const params = [clinicaId]
   if (data_inicio) {
@@ -38,11 +38,11 @@ function buscarRelatorioCirurgias(clinicaId, { data_inicio, data_fim }) {
     params.push(data_fim)
   }
 
-  const { total } = db.prepare(`SELECT COUNT(*) AS total FROM cirurgias WHERE clinica_id = ?${filtroData}`).get(...params)
-  const { total_realizadas } = db
+  const { total } = await db.prepare(`SELECT COUNT(*) AS total FROM cirurgias WHERE clinica_id = ?${filtroData}`).get(...params)
+  const { total_realizadas } = await db
     .prepare(`SELECT COUNT(*) AS total_realizadas FROM cirurgias WHERE clinica_id = ? AND status = 'pronta'${filtroData}`)
     .get(...params)
-  const por_dia = db
+  const por_dia = await db
     .prepare(
       `SELECT data_prevista AS data, COUNT(*) AS quantidade
        FROM cirurgias
@@ -55,12 +55,15 @@ function buscarRelatorioCirurgias(clinicaId, { data_inicio, data_fim }) {
   return { total, total_realizadas, por_dia }
 }
 
+// Agrupamento por semana usa o padrão ISO do Postgres (ano-semana ISO, ex: "2024-W21"),
+// levemente diferente do %Y-W%W do SQLite (semana começando em domingo) — aceitável pra
+// um relatório gerencial, sem equivalente 1:1 direto entre os dois bancos.
 function chaveAgrupamento(periodo, coluna) {
   switch (periodo) {
     case 'dia':
       return `substr(${coluna}, 1, 10)`
     case 'semana':
-      return `strftime('%Y-W%W', ${coluna})`
+      return `to_char((${coluna})::date, 'IYYY-"W"IW')`
     case 'mes':
       return `substr(${coluna}, 1, 7)`
     case 'ano':
@@ -70,7 +73,7 @@ function chaveAgrupamento(periodo, coluna) {
   }
 }
 
-function buscarRelatorioFinanceiro(clinicaId, periodo, { data_inicio, data_fim }) {
+async function buscarRelatorioFinanceiro(clinicaId, periodo, { data_inicio, data_fim }) {
   const chaveRecebiveis = chaveAgrupamento(periodo, 'data_pagamento')
   const chaveDespesas = chaveAgrupamento(periodo, 'data')
   if (!chaveRecebiveis) return null
@@ -97,7 +100,7 @@ function buscarRelatorioFinanceiro(clinicaId, periodo, { data_inicio, data_fim }
     paramsDespesas.push(data_fim)
   }
 
-  const recebiveis = db
+  const recebiveis = await db
     .prepare(
       `SELECT ${chaveRecebiveis} AS chave, COALESCE(SUM(valor), 0) AS valor
        FROM pagamentos
@@ -105,7 +108,7 @@ function buscarRelatorioFinanceiro(clinicaId, periodo, { data_inicio, data_fim }
        GROUP BY chave ORDER BY chave ASC`,
     )
     .all(...paramsRecebiveis)
-  const despesas = db
+  const despesas = await db
     .prepare(
       `SELECT ${chaveDespesas} AS chave, COALESCE(SUM(valor), 0) AS valor
        FROM despesas_clinica
@@ -120,7 +123,7 @@ function buscarRelatorioFinanceiro(clinicaId, periodo, { data_inicio, data_fim }
 // Produção realizada: um pagamento já recebido = uma linha (paciente + o que foi pago + valor).
 // A "descrição" do pagamento já é o texto livre que a recepção/financeiro preenche ao lançá-lo
 // (ex.: "Consulta", "Botox"), então serve como procedimento/consulta sem precisar de campo novo.
-function buscarRelatorioProducao(clinicaId, { data_inicio, data_fim }) {
+async function buscarRelatorioProducao(clinicaId, { data_inicio, data_fim }) {
   let filtro = ''
   const params = [clinicaId]
   if (data_inicio) {
@@ -132,7 +135,7 @@ function buscarRelatorioProducao(clinicaId, { data_inicio, data_fim }) {
     params.push(data_fim)
   }
 
-  const linhas = db
+  const linhas = await db
     .prepare(
       `SELECT p.nome AS paciente_nome, pg.descricao, pg.valor, pg.data_pagamento
        FROM pagamentos pg
@@ -148,7 +151,7 @@ function buscarRelatorioProducao(clinicaId, { data_inicio, data_fim }) {
 // Contas a pagar e a receber: diferente do relatório "Financeiro" acima (que soma só o que
 // já foi pago/recebido), este lista o que está EM ABERTO — pendente ou atrasado — filtrado
 // pela data de vencimento, pra saber o que ainda falta receber dos pacientes e pagar de despesas.
-function buscarRelatorioContas(clinicaId, { data_inicio, data_fim }) {
+async function buscarRelatorioContas(clinicaId, { data_inicio, data_fim }) {
   let filtroReceber = ''
   const paramsReceber = [clinicaId]
   if (data_inicio) {
@@ -171,7 +174,7 @@ function buscarRelatorioContas(clinicaId, { data_inicio, data_fim }) {
     paramsPagar.push(data_fim)
   }
 
-  const aReceber = db
+  const aReceber = await db
     .prepare(
       `SELECT p.nome AS paciente_nome, pg.descricao, pg.valor, pg.data_vencimento, pg.status
        FROM pagamentos pg
@@ -180,7 +183,7 @@ function buscarRelatorioContas(clinicaId, { data_inicio, data_fim }) {
        ORDER BY (pg.data_vencimento IS NULL), pg.data_vencimento ASC`,
     )
     .all(...paramsReceber)
-  const aPagar = db
+  const aPagar = await db
     .prepare(
       `SELECT descricao, categoria, valor, data, status
        FROM despesas_clinica
@@ -228,7 +231,7 @@ function contarPor(chave, contadores) {
 // cruzando sexo/faixa etária do paciente (na data do atendimento) com o que foi realizado.
 // Cada agendamento conta uma vez — o mesmo paciente atendido várias vezes aparece várias vezes,
 // igual à "Produção realizada", pra manter os totais das três quebras sempre batendo entre si.
-function buscarPerfilEpidemiologico(clinicaId, { data_inicio, data_fim }) {
+async function buscarPerfilEpidemiologico(clinicaId, { data_inicio, data_fim }) {
   let filtro = ''
   const params = [clinicaId]
   if (data_inicio) {
@@ -240,7 +243,7 @@ function buscarPerfilEpidemiologico(clinicaId, { data_inicio, data_fim }) {
     params.push(`${data_fim} 23:59:59`)
   }
 
-  const atendimentos = db
+  const atendimentos = await db
     .prepare(
       `SELECT p.sexo, p.data_nascimento, a.data_hora, COALESCE(tp.nome, 'Consulta') AS procedimento
        FROM agendamentos a
@@ -269,14 +272,14 @@ function buscarPerfilEpidemiologico(clinicaId, { data_inicio, data_fim }) {
   return { total: atendimentos.length, porSexo, porFaixaEtaria, porProcedimento }
 }
 
-router.get('/epidemiologico', (req, res) => {
-  res.json(buscarPerfilEpidemiologico(req.usuario.clinica_id, req.query))
+router.get('/epidemiologico', async (req, res) => {
+  res.json(await buscarPerfilEpidemiologico(req.usuario.clinica_id, req.query))
 })
 
-router.get('/epidemiologico.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.get('/epidemiologico.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const { data_inicio, data_fim } = req.query
-  const dados = buscarPerfilEpidemiologico(req.usuario.clinica_id, req.query)
+  const dados = await buscarPerfilEpidemiologico(req.usuario.clinica_id, req.query)
   gerarRelatorioEpidemiologicoPDF(res, { clinica, data_inicio, data_fim, ...dados })
 })
 
@@ -293,7 +296,7 @@ function filtroDataHora(params, data_inicio, data_fim, coluna = 'a.data_hora') {
   return filtro
 }
 
-function buscarAgendamentosComStatus(clinicaId, status, { data_inicio, data_fim }) {
+async function buscarAgendamentosComStatus(clinicaId, status, { data_inicio, data_fim }) {
   const params = [clinicaId, status]
   const filtro = filtroDataHora(params, data_inicio, data_fim)
   return db
@@ -309,14 +312,14 @@ function buscarAgendamentosComStatus(clinicaId, status, { data_inicio, data_fim 
     .all(...params)
 }
 
-function contarAgendamentos(clinicaId, { data_inicio, data_fim }, statusFiltro) {
+async function contarAgendamentos(clinicaId, { data_inicio, data_fim }, statusFiltro) {
   const params = [clinicaId]
   let filtro = filtroDataHora(params, data_inicio, data_fim, 'data_hora')
   if (statusFiltro) {
     filtro += ` AND status IN (${statusFiltro.map(() => '?').join(',')})`
     params.push(...statusFiltro)
   }
-  const { total } = db.prepare(`SELECT COUNT(*) AS total FROM agendamentos WHERE clinica_id = ?${filtro}`).get(...params)
+  const { total } = await db.prepare(`SELECT COUNT(*) AS total FROM agendamentos WHERE clinica_id = ?${filtro}`).get(...params)
   return total
 }
 
@@ -324,45 +327,45 @@ function contarAgendamentos(clinicaId, { data_inicio, data_fim }, statusFiltro) 
 // "Marcar falta" na Agenda). Taxa = faltas / (faltas + concluídos) — só conta atendimentos
 // que realmente deveriam ter acontecido, ignora o que ainda está agendado no futuro ou foi
 // cancelado de propósito (isso é o relatório de Cancelamento, abaixo).
-function buscarRelatorioAbsenteismo(clinicaId, filtro) {
-  const linhas = buscarAgendamentosComStatus(clinicaId, 'faltou', filtro)
-  const totalRelevante = contarAgendamentos(clinicaId, filtro, ['faltou', 'concluido'])
+async function buscarRelatorioAbsenteismo(clinicaId, filtro) {
+  const linhas = await buscarAgendamentosComStatus(clinicaId, 'faltou', filtro)
+  const totalRelevante = await contarAgendamentos(clinicaId, filtro, ['faltou', 'concluido'])
   const taxa = totalRelevante > 0 ? (linhas.length / totalRelevante) * 100 : 0
   return { linhas, total: linhas.length, totalRelevante, taxa }
 }
 
-router.get('/absenteismo', (req, res) => {
-  res.json(buscarRelatorioAbsenteismo(req.usuario.clinica_id, req.query))
+router.get('/absenteismo', async (req, res) => {
+  res.json(await buscarRelatorioAbsenteismo(req.usuario.clinica_id, req.query))
 })
 
-router.get('/absenteismo.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.get('/absenteismo.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const { data_inicio, data_fim } = req.query
-  const dados = buscarRelatorioAbsenteismo(req.usuario.clinica_id, req.query)
+  const dados = await buscarRelatorioAbsenteismo(req.usuario.clinica_id, req.query)
   gerarRelatorioAbsenteismoPDF(res, { clinica, data_inicio, data_fim, ...dados })
 })
 
 // Cancelamento: agendamentos cancelados. Taxa = cancelados / total de agendamentos criados
 // pra acontecer no período (qualquer status) — mede o quanto da agenda "evapora" por cancelamento.
-function buscarRelatorioCancelamento(clinicaId, filtro) {
-  const linhas = buscarAgendamentosComStatus(clinicaId, 'cancelado', filtro)
-  const totalGeral = contarAgendamentos(clinicaId, filtro, null)
+async function buscarRelatorioCancelamento(clinicaId, filtro) {
+  const linhas = await buscarAgendamentosComStatus(clinicaId, 'cancelado', filtro)
+  const totalGeral = await contarAgendamentos(clinicaId, filtro, null)
   const taxa = totalGeral > 0 ? (linhas.length / totalGeral) * 100 : 0
   return { linhas, total: linhas.length, totalGeral, taxa }
 }
 
-router.get('/cancelamento', (req, res) => {
-  res.json(buscarRelatorioCancelamento(req.usuario.clinica_id, req.query))
+router.get('/cancelamento', async (req, res) => {
+  res.json(await buscarRelatorioCancelamento(req.usuario.clinica_id, req.query))
 })
 
-router.get('/cancelamento.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.get('/cancelamento.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const { data_inicio, data_fim } = req.query
-  const dados = buscarRelatorioCancelamento(req.usuario.clinica_id, req.query)
+  const dados = await buscarRelatorioCancelamento(req.usuario.clinica_id, req.query)
   gerarRelatorioCancelamentoPDF(res, { clinica, data_inicio, data_fim, ...dados })
 })
 
-function buscarAtendimentosConcluidos(clinicaId, { data_inicio, data_fim }) {
+async function buscarAtendimentosConcluidos(clinicaId, { data_inicio, data_fim }) {
   const params = [clinicaId]
   const filtro = filtroDataHora(params, data_inicio, data_fim)
   return db
@@ -379,64 +382,64 @@ function buscarAtendimentosConcluidos(clinicaId, { data_inicio, data_fim }) {
 // Total de consultas e procedimentos realizados: quantidade de atendimentos concluídos,
 // agrupados pelo que foi feito. Mesma base de dados da "Vendas por profissional" abaixo
 // (agendamentos concluídos), só que agrupando por procedimento em vez de por médico.
-function buscarRelatorioConsultasProcedimentos(clinicaId, filtro) {
-  const atendimentos = buscarAtendimentosConcluidos(clinicaId, filtro)
+async function buscarRelatorioConsultasProcedimentos(clinicaId, filtro) {
+  const atendimentos = await buscarAtendimentosConcluidos(clinicaId, filtro)
   const cont = new Map()
   atendimentos.forEach((a) => contarPor(a.procedimento, cont))
   const porProcedimento = [...cont.entries()].map(([rotulo, quantidade]) => ({ rotulo, quantidade })).sort((a, b) => b.quantidade - a.quantidade)
   return { total: atendimentos.length, porProcedimento }
 }
 
-router.get('/consultas-procedimentos', (req, res) => {
-  res.json(buscarRelatorioConsultasProcedimentos(req.usuario.clinica_id, req.query))
+router.get('/consultas-procedimentos', async (req, res) => {
+  res.json(await buscarRelatorioConsultasProcedimentos(req.usuario.clinica_id, req.query))
 })
 
-router.get('/consultas-procedimentos.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.get('/consultas-procedimentos.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const { data_inicio, data_fim } = req.query
-  const dados = buscarRelatorioConsultasProcedimentos(req.usuario.clinica_id, req.query)
+  const dados = await buscarRelatorioConsultasProcedimentos(req.usuario.clinica_id, req.query)
   gerarRelatorioConsultasProcedimentosPDF(res, { clinica, data_inicio, data_fim, ...dados })
 })
 
 // Vendas por profissional: por decisão do usuário (não existe vínculo entre pagamento e
 // profissional no sistema hoje), isso mede QUANTIDADE de atendimentos concluídos por médico,
 // não valor em R$. Se pedir o valor de verdade no futuro, precisa criar esse vínculo antes.
-function buscarRelatorioVendasProfissional(clinicaId, filtro) {
-  const atendimentos = buscarAtendimentosConcluidos(clinicaId, filtro)
+async function buscarRelatorioVendasProfissional(clinicaId, filtro) {
+  const atendimentos = await buscarAtendimentosConcluidos(clinicaId, filtro)
   const cont = new Map()
   atendimentos.forEach((a) => contarPor(a.medico_nome, cont))
   const porProfissional = [...cont.entries()].map(([rotulo, quantidade]) => ({ rotulo, quantidade })).sort((a, b) => b.quantidade - a.quantidade)
   return { total: atendimentos.length, porProfissional }
 }
 
-router.get('/vendas-profissional', (req, res) => {
-  res.json(buscarRelatorioVendasProfissional(req.usuario.clinica_id, req.query))
+router.get('/vendas-profissional', async (req, res) => {
+  res.json(await buscarRelatorioVendasProfissional(req.usuario.clinica_id, req.query))
 })
 
-router.get('/vendas-profissional.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.get('/vendas-profissional.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const { data_inicio, data_fim } = req.query
-  const dados = buscarRelatorioVendasProfissional(req.usuario.clinica_id, req.query)
+  const dados = await buscarRelatorioVendasProfissional(req.usuario.clinica_id, req.query)
   gerarRelatorioVendasProfissionalPDF(res, { clinica, data_inicio, data_fim, ...dados })
 })
 
 // Repasse de pagamento: reaproveita o mesmo cálculo do módulo Comissões (fixo mensal +
 // comissão por cirurgia + avulsas aprovadas), só que como relatório mensal imprimível —
 // única fonte de verdade pra não ter dois lugares calculando comissão de jeitos diferentes.
-function buscarRelatorioRepasse(clinicaId, mes, ano) {
+async function buscarRelatorioRepasse(clinicaId, mes, ano) {
   const referencia = montarReferencia(mes, ano)
-  const resumo = resumoComissoesClinica(clinicaId, referencia)
+  const resumo = await resumoComissoesClinica(clinicaId, referencia)
   const totalGeral = resumo.reduce((s, r) => s + r.total, 0)
   return { referencia, resumo, totalGeral }
 }
 
-router.get('/repasse', (req, res) => {
-  res.json(buscarRelatorioRepasse(req.usuario.clinica_id, req.query.mes, req.query.ano))
+router.get('/repasse', async (req, res) => {
+  res.json(await buscarRelatorioRepasse(req.usuario.clinica_id, req.query.mes, req.query.ano))
 })
 
-router.get('/repasse.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
-  const dados = buscarRelatorioRepasse(req.usuario.clinica_id, req.query.mes, req.query.ano)
+router.get('/repasse.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const dados = await buscarRelatorioRepasse(req.usuario.clinica_id, req.query.mes, req.query.ano)
   gerarRelatorioRepassePDF(res, { clinica, ...dados })
 })
 
@@ -445,29 +448,26 @@ const NOMES_MES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set'
 // Análise financeira: os 12 meses do ano, cada um com total recebido (pago) x total gasto
 // (pago) e o saldo — visão anual comparativa, diferente do "Financeiro" acima que exige
 // escolher um período/intervalo manualmente e mostra as listas separadas, sem saldo por mês.
-function buscarAnaliseFinanceira(clinicaId, ano) {
-  const receitasPorMes = new Map(
-    db
-      .prepare(
-        `SELECT substr(data_pagamento, 6, 2) AS mes, COALESCE(SUM(valor), 0) AS valor
-         FROM pagamentos
-         WHERE clinica_id = ? AND status = 'pago' AND substr(data_pagamento, 1, 4) = ?
-         GROUP BY mes`,
-      )
-      .all(clinicaId, String(ano))
-      .map((r) => [r.mes, r.valor]),
-  )
-  const despesasPorMes = new Map(
-    db
-      .prepare(
-        `SELECT substr(data, 6, 2) AS mes, COALESCE(SUM(valor), 0) AS valor
-         FROM despesas_clinica
-         WHERE clinica_id = ? AND status = 'pago' AND substr(data, 1, 4) = ?
-         GROUP BY mes`,
-      )
-      .all(clinicaId, String(ano))
-      .map((r) => [r.mes, r.valor]),
-  )
+async function buscarAnaliseFinanceira(clinicaId, ano) {
+  const linhasReceitas = await db
+    .prepare(
+      `SELECT substr(data_pagamento, 6, 2) AS mes, COALESCE(SUM(valor), 0) AS valor
+       FROM pagamentos
+       WHERE clinica_id = ? AND status = 'pago' AND substr(data_pagamento, 1, 4) = ?
+       GROUP BY mes`,
+    )
+    .all(clinicaId, String(ano))
+  const receitasPorMes = new Map(linhasReceitas.map((r) => [r.mes, r.valor]))
+
+  const linhasDespesas = await db
+    .prepare(
+      `SELECT substr(data, 6, 2) AS mes, COALESCE(SUM(valor), 0) AS valor
+       FROM despesas_clinica
+       WHERE clinica_id = ? AND status = 'pago' AND substr(data, 1, 4) = ?
+       GROUP BY mes`,
+    )
+    .all(clinicaId, String(ano))
+  const despesasPorMes = new Map(linhasDespesas.map((r) => [r.mes, r.valor]))
 
   const meses = NOMES_MES.map((nome, i) => {
     const chave = String(i + 1).padStart(2, '0')
@@ -481,73 +481,73 @@ function buscarAnaliseFinanceira(clinicaId, ano) {
   return { ano: Number(ano), meses, totalReceitas, totalDespesas, totalSaldo: totalReceitas - totalDespesas }
 }
 
-router.get('/analise-financeira', (req, res) => {
+router.get('/analise-financeira', async (req, res) => {
   const ano = req.query.ano || new Date().getFullYear()
-  res.json(buscarAnaliseFinanceira(req.usuario.clinica_id, ano))
+  res.json(await buscarAnaliseFinanceira(req.usuario.clinica_id, ano))
 })
 
-router.get('/analise-financeira.pdf', (req, res) => {
+router.get('/analise-financeira.pdf', async (req, res) => {
   const ano = req.query.ano || new Date().getFullYear()
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
-  const dados = buscarAnaliseFinanceira(req.usuario.clinica_id, ano)
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const dados = await buscarAnaliseFinanceira(req.usuario.clinica_id, ano)
   gerarRelatorioAnaliseFinanceiraPDF(res, { clinica, ...dados })
 })
 
-router.get('/contas', (req, res) => {
-  res.json(buscarRelatorioContas(req.usuario.clinica_id, req.query))
+router.get('/contas', async (req, res) => {
+  res.json(await buscarRelatorioContas(req.usuario.clinica_id, req.query))
 })
 
-router.get('/contas.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.get('/contas.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const { data_inicio, data_fim } = req.query
-  const dados = buscarRelatorioContas(req.usuario.clinica_id, req.query)
+  const dados = await buscarRelatorioContas(req.usuario.clinica_id, req.query)
   gerarRelatorioContasPDF(res, { clinica, data_inicio, data_fim, ...dados })
 })
 
-router.get('/producao', (req, res) => {
-  res.json(buscarRelatorioProducao(req.usuario.clinica_id, req.query))
+router.get('/producao', async (req, res) => {
+  res.json(await buscarRelatorioProducao(req.usuario.clinica_id, req.query))
 })
 
-router.get('/producao.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.get('/producao.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const { data_inicio, data_fim } = req.query
-  const dados = buscarRelatorioProducao(req.usuario.clinica_id, req.query)
+  const dados = await buscarRelatorioProducao(req.usuario.clinica_id, req.query)
   gerarRelatorioProducaoPDF(res, { clinica, data_inicio, data_fim, ...dados })
 })
 
-router.get('/pacientes', (req, res) => {
-  res.json(buscarRelatorioPacientes(req.usuario.clinica_id))
+router.get('/pacientes', async (req, res) => {
+  res.json(await buscarRelatorioPacientes(req.usuario.clinica_id))
 })
 
-router.get('/pacientes.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
-  const { total } = buscarRelatorioPacientes(req.usuario.clinica_id)
+router.get('/pacientes.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const { total } = await buscarRelatorioPacientes(req.usuario.clinica_id)
   gerarRelatorioPacientesPDF(res, { clinica, total })
 })
 
-router.get('/cirurgias', (req, res) => {
-  res.json(buscarRelatorioCirurgias(req.usuario.clinica_id, req.query))
+router.get('/cirurgias', async (req, res) => {
+  res.json(await buscarRelatorioCirurgias(req.usuario.clinica_id, req.query))
 })
 
-router.get('/cirurgias.pdf', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+router.get('/cirurgias.pdf', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   const { data_inicio, data_fim } = req.query
-  const dados = buscarRelatorioCirurgias(req.usuario.clinica_id, req.query)
+  const dados = await buscarRelatorioCirurgias(req.usuario.clinica_id, req.query)
   gerarRelatorioCirurgiasPDF(res, { clinica, data_inicio, data_fim, ...dados })
 })
 
-router.get('/financeiro', (req, res) => {
+router.get('/financeiro', async (req, res) => {
   const { periodo = 'mes' } = req.query
-  const resultado = buscarRelatorioFinanceiro(req.usuario.clinica_id, periodo, req.query)
+  const resultado = await buscarRelatorioFinanceiro(req.usuario.clinica_id, periodo, req.query)
   if (!resultado) return res.status(400).json({ error: 'periodo deve ser dia, semana, mes ou ano' })
   res.json(resultado)
 })
 
-router.get('/financeiro.pdf', (req, res) => {
+router.get('/financeiro.pdf', async (req, res) => {
   const { periodo = 'mes', data_inicio, data_fim } = req.query
-  const resultado = buscarRelatorioFinanceiro(req.usuario.clinica_id, periodo, req.query)
+  const resultado = await buscarRelatorioFinanceiro(req.usuario.clinica_id, periodo, req.query)
   if (!resultado) return res.status(400).json({ error: 'periodo deve ser dia, semana, mes ou ano' })
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   gerarRelatorioFinanceiroPDF(res, { clinica, data_inicio, data_fim, ...resultado })
 })
 

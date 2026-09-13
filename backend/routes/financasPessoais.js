@@ -9,21 +9,21 @@ import { requireRole } from '../auth.js'
 const router = Router()
 router.use(requireRole('admin', 'coordenador', 'medico', 'enfermagem', 'financeiro'))
 
-router.get('/resumo', (req, res) => {
+router.get('/resumo', async (req, res) => {
   const { mes, ano } = req.query
   const referencia = mes && ano ? `${ano}-${String(mes).padStart(2, '0')}` : new Date().toISOString().slice(0, 7)
 
-  const { receitas } = db
+  const { receitas } = await db
     .prepare("SELECT COALESCE(SUM(valor), 0) AS receitas FROM financas_pessoais WHERE usuario_id = ? AND tipo = 'receita' AND substr(data, 1, 7) = ?")
     .get(req.usuario.id, referencia)
-  const { despesas } = db
+  const { despesas } = await db
     .prepare("SELECT COALESCE(SUM(valor), 0) AS despesas FROM financas_pessoais WHERE usuario_id = ? AND tipo = 'despesa' AND substr(data, 1, 7) = ?")
     .get(req.usuario.id, referencia)
 
   res.json({ referencia, receitas, despesas, saldo: receitas - despesas })
 })
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { data_inicio, data_fim, tipo } = req.query
   let sql = 'SELECT * FROM financas_pessoais WHERE usuario_id = ?'
   const params = [req.usuario.id]
@@ -40,22 +40,22 @@ router.get('/', (req, res) => {
     params.push(tipo)
   }
   sql += ' ORDER BY data DESC'
-  res.json(db.prepare(sql).all(...params))
+  res.json(await db.prepare(sql).all(...params))
 })
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { tipo, descricao, categoria, valor, data } = req.body
   if (!['receita', 'despesa'].includes(tipo)) return res.status(400).json({ error: 'Tipo deve ser receita ou despesa' })
   if (!descricao || !valor || !data) return res.status(400).json({ error: 'Descrição, valor e data são obrigatórios' })
   const id = nanoid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO financas_pessoais (id, usuario_id, tipo, descricao, categoria, valor, data) VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, req.usuario.id, tipo, descricao, categoria || null, Number(valor), data)
-  res.status(201).json(db.prepare('SELECT * FROM financas_pessoais WHERE id = ?').get(id))
+  res.status(201).json(await db.prepare('SELECT * FROM financas_pessoais WHERE id = ?').get(id))
 })
 
-router.put('/:id', (req, res) => {
-  const existente = db.prepare('SELECT * FROM financas_pessoais WHERE id = ? AND usuario_id = ?').get(req.params.id, req.usuario.id)
+router.put('/:id', async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM financas_pessoais WHERE id = ? AND usuario_id = ?').get(req.params.id, req.usuario.id)
   if (!existente) return res.status(404).json({ error: 'Registro não encontrado' })
   if (req.body.tipo && !['receita', 'despesa'].includes(req.body.tipo)) {
     return res.status(400).json({ error: 'Tipo deve ser receita ou despesa' })
@@ -67,7 +67,7 @@ router.put('/:id', (req, res) => {
     valor: req.body.valor !== undefined ? Number(req.body.valor) : existente.valor,
     data: req.body.data ?? existente.data,
   }
-  db.prepare(`UPDATE financas_pessoais SET tipo=?, descricao=?, categoria=?, valor=?, data=? WHERE id=?`).run(
+  await db.prepare(`UPDATE financas_pessoais SET tipo=?, descricao=?, categoria=?, valor=?, data=? WHERE id=?`).run(
     merged.tipo,
     merged.descricao,
     merged.categoria,
@@ -75,11 +75,11 @@ router.put('/:id', (req, res) => {
     merged.data,
     req.params.id,
   )
-  res.json(db.prepare('SELECT * FROM financas_pessoais WHERE id = ?').get(req.params.id))
+  res.json(await db.prepare('SELECT * FROM financas_pessoais WHERE id = ?').get(req.params.id))
 })
 
-router.delete('/:id', (req, res) => {
-  db.prepare('DELETE FROM financas_pessoais WHERE id = ? AND usuario_id = ?').run(req.params.id, req.usuario.id)
+router.delete('/:id', async (req, res) => {
+  await db.prepare('DELETE FROM financas_pessoais WHERE id = ? AND usuario_id = ?').run(req.params.id, req.usuario.id)
   res.status(204).end()
 })
 

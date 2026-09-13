@@ -28,14 +28,14 @@ function ocultarFinanceiroSeNecessario(cirurgia, role) {
   return resto
 }
 
-function comAuxiliares(cirurgia) {
+async function comAuxiliares(cirurgia) {
   if (!cirurgia) return cirurgia
-  const auxiliares = db
+  const auxiliares = await db
     .prepare(
       `SELECT a.id, a.nome, a.funcao FROM cirurgia_auxiliares ca JOIN auxiliares a ON a.id = ca.auxiliar_id WHERE ca.cirurgia_id = ?`,
     )
     .all(cirurgia.id)
-  const itens = db
+  const itens = await db
     .prepare(
       `SELECT i.id, i.nome, ci.quantidade FROM cirurgia_itens ci JOIN itens_cirurgia_catalogo i ON i.id = ci.item_id WHERE ci.cirurgia_id = ?`,
     )
@@ -43,34 +43,40 @@ function comAuxiliares(cirurgia) {
   return { ...cirurgia, auxiliares, itens }
 }
 
-function salvarAuxiliares(clinicaId, cirurgiaId, auxiliares) {
+// Recebem `dbLike` (o `db` normal ou um `tx` de transação) pra poderem rodar
+// dentro da mesma transação do INSERT/UPDATE da cirurgia (ver POST/PUT abaixo) —
+// cirurgia + auxiliares + itens têm que ser tudo ou nada.
+async function salvarAuxiliares(dbLike, clinicaId, cirurgiaId, auxiliares) {
   const ids = Array.isArray(auxiliares) ? [...new Set(auxiliares)] : []
   for (const auxiliarId of ids) {
-    const auxiliar = db.prepare('SELECT id FROM auxiliares WHERE id = ? AND clinica_id = ?').get(auxiliarId, clinicaId)
+    const auxiliar = await dbLike.prepare('SELECT id FROM auxiliares WHERE id = ? AND clinica_id = ?').get(auxiliarId, clinicaId)
     if (!auxiliar) return false
   }
-  db.prepare('DELETE FROM cirurgia_auxiliares WHERE cirurgia_id = ?').run(cirurgiaId)
+  await dbLike.prepare('DELETE FROM cirurgia_auxiliares WHERE cirurgia_id = ?').run(cirurgiaId)
   for (const auxiliarId of ids) {
-    db.prepare(`INSERT INTO cirurgia_auxiliares (id, cirurgia_id, auxiliar_id) VALUES (?, ?, ?)`).run(nanoid(), cirurgiaId, auxiliarId)
+    await dbLike.prepare(`INSERT INTO cirurgia_auxiliares (id, cirurgia_id, auxiliar_id) VALUES (?, ?, ?)`).run(nanoid(), cirurgiaId, auxiliarId)
   }
   return true
 }
 
-function salvarItens(clinicaId, cirurgiaId, itens) {
+async function salvarItens(dbLike, clinicaId, cirurgiaId, itens) {
   const lista = Array.isArray(itens) ? itens : []
   for (const it of lista) {
-    const item = db.prepare('SELECT id FROM itens_cirurgia_catalogo WHERE id = ? AND clinica_id = ?').get(it.item_id, clinicaId)
+    const item = await dbLike.prepare('SELECT id FROM itens_cirurgia_catalogo WHERE id = ? AND clinica_id = ?').get(it.item_id, clinicaId)
     if (!item) return false
   }
-  db.prepare('DELETE FROM cirurgia_itens WHERE cirurgia_id = ?').run(cirurgiaId)
+  await dbLike.prepare('DELETE FROM cirurgia_itens WHERE cirurgia_id = ?').run(cirurgiaId)
   for (const it of lista) {
     const quantidade = Number(it.quantidade) > 0 ? Math.floor(Number(it.quantidade)) : 1
-    db.prepare(`INSERT INTO cirurgia_itens (id, cirurgia_id, item_id, quantidade) VALUES (?, ?, ?, ?)`).run(nanoid(), cirurgiaId, it.item_id, quantidade)
+    await dbLike.prepare(`INSERT INTO cirurgia_itens (id, cirurgia_id, item_id, quantidade) VALUES (?, ?, ?, ?)`).run(nanoid(), cirurgiaId, it.item_id, quantidade)
   }
   return true
 }
 
-router.get('/', (req, res) => {
+const ERRO_AUXILIAR_INVALIDO = 'AUXILIAR_INVALIDO'
+const ERRO_ITEM_INVALIDO = 'ITEM_INVALIDO'
+
+router.get('/', async (req, res) => {
   const { paciente_id, status } = req.query
   let sql = SELECT_JOIN + ' WHERE c.clinica_id = ?'
   const params = [req.usuario.clinica_id]
@@ -83,74 +89,78 @@ router.get('/', (req, res) => {
     params.push(status)
   }
   sql += ' ORDER BY c.created_at DESC'
-  res.json(
-    db
-      .prepare(sql)
-      .all(...params)
-      .map(comAuxiliares)
-      .map((c) => ocultarFinanceiroSeNecessario(c, req.usuario.role)),
-  )
+  const rows = await db.prepare(sql).all(...params)
+  const comAux = await Promise.all(rows.map(comAuxiliares))
+  res.json(comAux.map((c) => ocultarFinanceiroSeNecessario(c, req.usuario.role)))
 })
 
-router.get('/:id', (req, res) => {
-  const row = db.prepare(SELECT_JOIN + ' WHERE c.id = ? AND c.clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.get('/:id', async (req, res) => {
+  const row = await db.prepare(SELECT_JOIN + ' WHERE c.id = ? AND c.clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!row) return res.status(404).json({ error: 'Cirurgia não encontrada' })
-  res.json(ocultarFinanceiroSeNecessario(comAuxiliares(row), req.usuario.role))
+  res.json(ocultarFinanceiroSeNecessario(await comAuxiliares(row), req.usuario.role))
 })
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { paciente_id, medico_id, nome_cirurgia, data_prevista, hospital_id, local_hospital, equipe, observacoes, observacoes_financeiras, auxiliares, itens } = req.body
   if (!paciente_id || !nome_cirurgia) {
     return res.status(400).json({ error: 'Paciente e nome da cirurgia são obrigatórios' })
   }
-  const paciente = db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(paciente_id, req.usuario.clinica_id)
+  const paciente = await db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(paciente_id, req.usuario.clinica_id)
   if (!paciente) return res.status(400).json({ error: 'Paciente inválido' })
   if (medico_id) {
-    const medico = db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, req.usuario.clinica_id)
+    const medico = await db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, req.usuario.clinica_id)
     if (!medico) return res.status(400).json({ error: 'Médico inválido' })
   }
   if (hospital_id) {
-    const hospital = db.prepare('SELECT id FROM hospitais WHERE id = ? AND clinica_id = ?').get(hospital_id, req.usuario.clinica_id)
+    const hospital = await db.prepare('SELECT id FROM hospitais WHERE id = ? AND clinica_id = ?').get(hospital_id, req.usuario.clinica_id)
     if (!hospital) return res.status(400).json({ error: 'Hospital inválido' })
   }
 
   const id = nanoid()
-  db.prepare(
-    `INSERT INTO cirurgias (id, clinica_id, paciente_id, medico_id, nome_cirurgia, data_prevista, hospital_id, local_hospital, equipe, observacoes, observacoes_financeiras, criado_por)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    req.usuario.clinica_id,
-    paciente_id,
-    medico_id || null,
-    nome_cirurgia,
-    data_prevista || null,
-    hospital_id || null,
-    local_hospital || null,
-    equipe || null,
-    observacoes || null,
-    PODE_FINANCEIRO.has(req.usuario.role) ? observacoes_financeiras || null : null,
-    req.usuario.id,
-  )
-  if (!salvarAuxiliares(req.usuario.clinica_id, id, auxiliares)) {
-    return res.status(400).json({ error: 'Um dos auxiliares é inválido' })
+  try {
+    await db.transaction(async (tx) => {
+      await tx.prepare(
+        `INSERT INTO cirurgias (id, clinica_id, paciente_id, medico_id, nome_cirurgia, data_prevista, hospital_id, local_hospital, equipe, observacoes, observacoes_financeiras, criado_por)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        id,
+        req.usuario.clinica_id,
+        paciente_id,
+        medico_id || null,
+        nome_cirurgia,
+        data_prevista || null,
+        hospital_id || null,
+        local_hospital || null,
+        equipe || null,
+        observacoes || null,
+        PODE_FINANCEIRO.has(req.usuario.role) ? observacoes_financeiras || null : null,
+        req.usuario.id,
+      )
+      if (!(await salvarAuxiliares(tx, req.usuario.clinica_id, id, auxiliares))) {
+        throw Object.assign(new Error('Auxiliar inválido'), { codigo: ERRO_AUXILIAR_INVALIDO })
+      }
+      if (!(await salvarItens(tx, req.usuario.clinica_id, id, itens))) {
+        throw Object.assign(new Error('Item inválido'), { codigo: ERRO_ITEM_INVALIDO })
+      }
+    })()
+  } catch (erro) {
+    if (erro.codigo === ERRO_AUXILIAR_INVALIDO) return res.status(400).json({ error: 'Um dos auxiliares é inválido' })
+    if (erro.codigo === ERRO_ITEM_INVALIDO) return res.status(400).json({ error: 'Um dos itens é inválido' })
+    throw erro
   }
-  if (!salvarItens(req.usuario.clinica_id, id, itens)) {
-    return res.status(400).json({ error: 'Um dos itens é inválido' })
-  }
-  res.status(201).json(ocultarFinanceiroSeNecessario(comAuxiliares(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(id)), req.usuario.role))
+  res.status(201).json(ocultarFinanceiroSeNecessario(await comAuxiliares(await db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(id)), req.usuario.role))
 })
 
-router.put('/:id', (req, res) => {
-  const existente = db.prepare('SELECT * FROM cirurgias WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.put('/:id', async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM cirurgias WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Cirurgia não encontrada' })
 
   if (req.body.medico_id) {
-    const medico = db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(req.body.medico_id, req.usuario.clinica_id)
+    const medico = await db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(req.body.medico_id, req.usuario.clinica_id)
     if (!medico) return res.status(400).json({ error: 'Médico inválido' })
   }
   if (req.body.hospital_id) {
-    const hospital = db.prepare('SELECT id FROM hospitais WHERE id = ? AND clinica_id = ?').get(req.body.hospital_id, req.usuario.clinica_id)
+    const hospital = await db.prepare('SELECT id FROM hospitais WHERE id = ? AND clinica_id = ?').get(req.body.hospital_id, req.usuario.clinica_id)
     if (!hospital) return res.status(400).json({ error: 'Hospital inválido' })
   }
 
@@ -173,46 +183,54 @@ router.put('/:id', (req, res) => {
     status: eraPronta ? 'rascunho' : existente.status,
   }
 
-  db.prepare(
-    `UPDATE cirurgias SET medico_id=?, nome_cirurgia=?, data_prevista=?, hospital_id=?, local_hospital=?, equipe=?, observacoes=?, observacoes_financeiras=?, status=?, atualizado_em=datetime('now') WHERE id=?`,
-  ).run(
-    merged.medico_id,
-    merged.nome_cirurgia,
-    merged.data_prevista,
-    merged.hospital_id,
-    merged.local_hospital,
-    merged.equipe,
-    merged.observacoes,
-    merged.observacoes_financeiras,
-    merged.status,
-    req.params.id,
-  )
+  try {
+    await db.transaction(async (tx) => {
+      await tx.prepare(
+        `UPDATE cirurgias SET medico_id=?, nome_cirurgia=?, data_prevista=?, hospital_id=?, local_hospital=?, equipe=?, observacoes=?, observacoes_financeiras=?, status=?, atualizado_em=now() WHERE id=?`,
+      ).run(
+        merged.medico_id,
+        merged.nome_cirurgia,
+        merged.data_prevista,
+        merged.hospital_id,
+        merged.local_hospital,
+        merged.equipe,
+        merged.observacoes,
+        merged.observacoes_financeiras,
+        merged.status,
+        req.params.id,
+      )
 
-  if (req.body.auxiliares !== undefined && !salvarAuxiliares(req.usuario.clinica_id, req.params.id, req.body.auxiliares)) {
-    return res.status(400).json({ error: 'Um dos auxiliares é inválido' })
-  }
-  if (req.body.itens !== undefined && !salvarItens(req.usuario.clinica_id, req.params.id, req.body.itens)) {
-    return res.status(400).json({ error: 'Um dos itens é inválido' })
+      if (req.body.auxiliares !== undefined && !(await salvarAuxiliares(tx, req.usuario.clinica_id, req.params.id, req.body.auxiliares))) {
+        throw Object.assign(new Error('Auxiliar inválido'), { codigo: ERRO_AUXILIAR_INVALIDO })
+      }
+      if (req.body.itens !== undefined && !(await salvarItens(tx, req.usuario.clinica_id, req.params.id, req.body.itens))) {
+        throw Object.assign(new Error('Item inválido'), { codigo: ERRO_ITEM_INVALIDO })
+      }
+    })()
+  } catch (erro) {
+    if (erro.codigo === ERRO_AUXILIAR_INVALIDO) return res.status(400).json({ error: 'Um dos auxiliares é inválido' })
+    if (erro.codigo === ERRO_ITEM_INVALIDO) return res.status(400).json({ error: 'Um dos itens é inválido' })
+    throw erro
   }
 
-  res.json(ocultarFinanceiroSeNecessario(comAuxiliares(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id)), req.usuario.role))
+  res.json(ocultarFinanceiroSeNecessario(await comAuxiliares(await db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id)), req.usuario.role))
 })
 
-router.put('/:id/finalizar', (req, res) => {
-  const existente = db.prepare(SELECT_JOIN + ' WHERE c.id = ? AND c.clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.put('/:id/finalizar', async (req, res) => {
+  const existente = await db.prepare(SELECT_JOIN + ' WHERE c.id = ? AND c.clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Cirurgia não encontrada' })
   if (!existente.medico_id) return res.status(400).json({ error: 'Defina o médico responsável antes de finalizar o relatório' })
 
-  db.prepare(
-    `UPDATE cirurgias SET status='pronta', finalizado_por=?, finalizado_em=datetime('now'), atualizado_em=datetime('now') WHERE id=?`,
+  await db.prepare(
+    `UPDATE cirurgias SET status='pronta', finalizado_por=?, finalizado_em=now(), atualizado_em=now() WHERE id=?`,
   ).run(req.usuario.id, req.params.id)
 
-  const medicoUsuario = db
+  const medicoUsuario = await db
     .prepare("SELECT id FROM usuarios WHERE medico_id = ? AND clinica_id = ? AND ativo = 1 AND role = 'medico'")
     .get(existente.medico_id, req.usuario.clinica_id)
 
   if (medicoUsuario) {
-    criarNotificacao({
+    await criarNotificacao({
       clinicaId: req.usuario.clinica_id,
       usuarioId: medicoUsuario.id,
       tipo: 'relatorio_cirurgico',
@@ -223,25 +241,25 @@ router.put('/:id/finalizar', (req, res) => {
     })
   }
 
-  res.json(ocultarFinanceiroSeNecessario(db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id), req.usuario.role))
+  res.json(ocultarFinanceiroSeNecessario(await db.prepare(SELECT_JOIN + ' WHERE c.id = ?').get(req.params.id), req.usuario.role))
 })
 
-router.get('/:id/relatorio.pdf', (req, res) => {
-  const cirurgia = db.prepare('SELECT * FROM cirurgias WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.get('/:id/relatorio.pdf', async (req, res) => {
+  const cirurgia = await db.prepare('SELECT * FROM cirurgias WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!cirurgia) return res.status(404).json({ error: 'Cirurgia não encontrada' })
-  const paciente = db.prepare('SELECT * FROM pacientes WHERE id = ?').get(cirurgia.paciente_id)
-  const medico = cirurgia.medico_id ? db.prepare('SELECT * FROM medicos WHERE id = ?').get(cirurgia.medico_id) : null
-  const hospital = cirurgia.hospital_id ? db.prepare('SELECT * FROM hospitais WHERE id = ?').get(cirurgia.hospital_id) : null
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
-  const { auxiliares, itens } = comAuxiliares(cirurgia)
+  const paciente = await db.prepare('SELECT * FROM pacientes WHERE id = ?').get(cirurgia.paciente_id)
+  const medico = cirurgia.medico_id ? await db.prepare('SELECT * FROM medicos WHERE id = ?').get(cirurgia.medico_id) : null
+  const hospital = cirurgia.hospital_id ? await db.prepare('SELECT * FROM hospitais WHERE id = ?').get(cirurgia.hospital_id) : null
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const { auxiliares, itens } = await comAuxiliares(cirurgia)
   const cirurgiaFiltrada = ocultarFinanceiroSeNecessario(cirurgia, req.usuario.role)
   gerarRelatorioCirurgiaPDF(res, { cirurgia: cirurgiaFiltrada, paciente, medico, hospital, clinica, auxiliares, itens })
 })
 
-router.delete('/:id', EXCLUSAO, (req, res) => {
-  db.prepare('DELETE FROM cirurgia_auxiliares WHERE cirurgia_id = ?').run(req.params.id)
-  db.prepare('DELETE FROM cirurgia_itens WHERE cirurgia_id = ?').run(req.params.id)
-  db.prepare('DELETE FROM cirurgias WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
+router.delete('/:id', EXCLUSAO, async (req, res) => {
+  await db.prepare('DELETE FROM cirurgia_auxiliares WHERE cirurgia_id = ?').run(req.params.id)
+  await db.prepare('DELETE FROM cirurgia_itens WHERE cirurgia_id = ?').run(req.params.id)
+  await db.prepare('DELETE FROM cirurgias WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
   res.status(204).end()
 })
 

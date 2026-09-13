@@ -14,10 +14,13 @@ services:
         generateValue: true
       - key: CORS_ORIGIN
         value: https://tecbmclinicas.netlify.app
-      - key: DATA_DIR
-        value: /var/data/db
       - key: UPLOADS_DIR
         value: /var/data/uploads
+      # Connection string do Postgres (Supabase, Session pooler) — configurada
+      # manualmente no painel do Render, não fica no blueprint (é segredo).
+      # O banco em si não usa mais o disco persistente (só uploads continuam nele).
+      - key: DATABASE_URL
+        sync: false
     disk:
       name: dados-persistentes
       mountPath: /var/data

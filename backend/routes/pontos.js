@@ -26,14 +26,14 @@ function distanciaMetros(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-function localReferencia(usuario) {
+async function localReferencia(usuario) {
   if (usuario.unidade_id) {
-    const unidade = db.prepare('SELECT * FROM unidades WHERE id = ?').get(usuario.unidade_id)
+    const unidade = await db.prepare('SELECT * FROM unidades WHERE id = ?').get(usuario.unidade_id)
     if (unidade?.latitude != null && unidade?.longitude != null) {
       return { latitude: unidade.latitude, longitude: unidade.longitude, raio: unidade.raio_metros || RAIO_PADRAO_METROS, nome: unidade.nome }
     }
   }
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id)
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id)
   if (clinica?.latitude != null && clinica?.longitude != null) {
     return { latitude: clinica.latitude, longitude: clinica.longitude, raio: clinica.raio_metros || RAIO_PADRAO_METROS, nome: clinica.nome }
   }
@@ -165,7 +165,7 @@ function periodoDe(dataISO, diaFechamento) {
 // referência: soma tudo que foi trabalhado menos a meta de cada período já
 // iniciado (mesmo o atual, ainda em andamento) — carrega positivo/negativo
 // dos meses anteriores pro atual, em vez de zerar todo mês.
-function saldoAcumulado(usuario, anoRef, mesRef) {
+async function saldoAcumulado(usuario, anoRef, mesRef) {
   const diaFechamento = usuario.dia_fechamento_folha || 20
   const admissaoISO = usuario.data_admissao || usuario.created_at.slice(0, 10)
   const periodoAdmissao = periodoDe(admissaoISO, diaFechamento)
@@ -177,7 +177,7 @@ function saldoAcumulado(usuario, anoRef, mesRef) {
   const { fim } = limitesPeriodo(anoRef, mesRef, diaFechamento)
   const inicio = admissaoISO > inicioAdmissao ? admissaoISO : inicioAdmissao
 
-  const registros = db
+  const registros = await db
     .prepare(`SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ?`)
     .all(usuario.id, inicio, fim)
 
@@ -206,9 +206,9 @@ function limitesSemana(referenciaISO) {
   return { inicio: fmt(segunda), fim: fmt(domingo) }
 }
 
-function resumoSemana(usuario, referenciaISO) {
+async function resumoSemana(usuario, referenciaISO) {
   const { inicio, fim } = limitesSemana(referenciaISO || new Date().toISOString().slice(0, 10))
-  const registros = db
+  const registros = await db
     .prepare(
       `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
     )
@@ -245,7 +245,7 @@ function resumoSemana(usuario, referenciaISO) {
   }
 }
 
-router.get('/', PODE_BATER_PONTO, (req, res) => {
+router.get('/', PODE_BATER_PONTO, async (req, res) => {
   const alvo = req.query.usuario_id && ['admin', 'coordenador', 'financeiro'].includes(req.usuario.role)
     ? req.query.usuario_id
     : req.usuario.id
@@ -261,22 +261,22 @@ router.get('/', PODE_BATER_PONTO, (req, res) => {
     params.push(req.query.data_fim)
   }
   sql += ' ORDER BY p.data_hora DESC'
-  res.json(db.prepare(sql).all(...params))
+  res.json(await db.prepare(sql).all(...params))
 })
 
-router.get('/resumo', GESTAO_RH, (req, res) => {
+router.get('/resumo', GESTAO_RH, async (req, res) => {
   const hoje = new Date()
   const mesRef = req.query.mes ? Number(req.query.mes) : hoje.getMonth() + 1
   const anoRef = req.query.ano ? Number(req.query.ano) : hoje.getFullYear()
   const referencia = `${anoRef}-${String(mesRef).padStart(2, '0')}`
 
-  const usuarios = db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1').all(req.usuario.clinica_id)
+  const usuarios = await db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1').all(req.usuario.clinica_id)
 
-  const resumo = usuarios.map((u) => {
+  const resumo = await Promise.all(usuarios.map(async (u) => {
     // Período de referência = ciclo de fechamento do próprio usuário (ex: 21 do
     // mês anterior a 20 do mês de referência), não o mês-calendário.
     const { inicio, fim } = limitesPeriodo(anoRef, mesRef, u.dia_fechamento_folha || 20)
-    const registros = db
+    const registros = await db
       .prepare(
         `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
       )
@@ -293,29 +293,29 @@ router.get('/resumo', GESTAO_RH, (req, res) => {
       meta_horas: u.carga_horaria_mensal_horas,
       horas_trabalhadas: Math.round(horasTrabalhadas * 100) / 100,
       saldo_horas: Math.round(saldoHoras * 100) / 100,
-      saldo_acumulado: saldoAcumulado(u, anoRef, mesRef),
+      saldo_acumulado: await saldoAcumulado(u, anoRef, mesRef),
       total_registros: registros.length,
       jornada: jornadaDoUsuario(u),
-      semana_atual: resumoSemana(u),
+      semana_atual: await resumoSemana(u),
     }
-  })
+  }))
 
   res.json({ referencia, resumo })
 })
 
-router.get('/semana', PODE_BATER_PONTO, (req, res) => {
+router.get('/semana', PODE_BATER_PONTO, async (req, res) => {
   const alvo =
     req.query.usuario_id && ['admin', 'coordenador', 'financeiro'].includes(req.usuario.role)
       ? req.query.usuario_id
       : req.usuario.id
 
-  const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND clinica_id = ?').get(alvo, req.usuario.clinica_id)
+  const usuario = await db.prepare('SELECT * FROM usuarios WHERE id = ? AND clinica_id = ?').get(alvo, req.usuario.clinica_id)
   if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado' })
 
   res.json({
     usuario_id: usuario.id,
     usuario_nome: usuario.nome,
-    ...resumoSemana(usuario, req.query.data),
+    ...(await resumoSemana(usuario, req.query.data)),
   })
 })
 
@@ -323,7 +323,7 @@ router.get('/semana', PODE_BATER_PONTO, (req, res) => {
 // do mês de referência (padrão de folha de pagamento usado pela clínica).
 // Recepção só enxerga a própria folha (força o filtro pro próprio usuário,
 // ignora qualquer tentativa de ver a de outra pessoa); GESTAO_RH vê todo mundo.
-router.get('/folha-frequencia.pdf', requireRole('admin', 'coordenador', 'financeiro', 'recepcao'), (req, res) => {
+router.get('/folha-frequencia.pdf', requireRole('admin', 'coordenador', 'financeiro', 'recepcao'), async (req, res) => {
   const hoje = new Date()
   const mesRef = req.query.mes ? Number(req.query.mes) : hoje.getMonth() + 1
   const anoRef = req.query.ano ? Number(req.query.ano) : hoje.getFullYear()
@@ -336,12 +336,12 @@ router.get('/folha-frequencia.pdf', requireRole('admin', 'coordenador', 'finance
 
   const usuarios =
     req.usuario.role === 'recepcao'
-      ? db.prepare('SELECT * FROM usuarios WHERE id = ? AND clinica_id = ? AND ativo = 1').all(req.usuario.id, req.usuario.clinica_id)
-      : db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1 ORDER BY nome COLLATE NOCASE').all(req.usuario.clinica_id)
+      ? await db.prepare('SELECT * FROM usuarios WHERE id = ? AND clinica_id = ? AND ativo = 1').all(req.usuario.id, req.usuario.clinica_id)
+      : await db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1 ORDER BY lower(nome)').all(req.usuario.clinica_id)
 
-  const funcionarios = usuarios.map((u) => {
+  const funcionarios = await Promise.all(usuarios.map(async (u) => {
     const periodoUsuario = limitesPeriodo(anoRef, mesRef, u.dia_fechamento_folha || 20)
-    const registros = db
+    const registros = await db
       .prepare(
         `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
       )
@@ -376,13 +376,13 @@ router.get('/folha-frequencia.pdf', requireRole('admin', 'coordenador', 'finance
       .sort((a, b) => a.data.localeCompare(b.data))
 
     return { nome: u.nome, jornada, dias }
-  })
+  }))
 
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   gerarFolhaFrequenciaPDF(res, { clinica, periodo: { inicio, fim }, funcionarios })
 })
 
-router.post('/', PODE_BATER_PONTO, uploadSelfiePonto.single('foto'), (req, res) => {
+router.post('/', PODE_BATER_PONTO, uploadSelfiePonto.single('foto'), async (req, res) => {
   const { tipo, latitude, longitude } = req.body
   if (!TIPOS.includes(tipo) && tipo !== TIPO_SEM_INTERVALO) {
     return res.status(400).json({ error: 'Tipo de marcação inválido' })
@@ -395,8 +395,8 @@ router.post('/', PODE_BATER_PONTO, uploadSelfiePonto.single('foto'), (req, res) 
     return res.status(400).json({ error: 'Não foi possível obter sua localização. Ative o GPS e permita o acesso à localização para bater o ponto.' })
   }
 
-  const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.usuario.id)
-  const ref = localReferencia(usuario)
+  const usuario = await db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.usuario.id)
+  const ref = await localReferencia(usuario)
 
   let distancia = null
   let dentroRaio = true
@@ -412,18 +412,24 @@ router.post('/', PODE_BATER_PONTO, uploadSelfiePonto.single('foto'), (req, res) 
 
   const fotoUrl = `/uploads/pontos/${req.file.filename}`
 
-  function inserirPonto(tipoReal) {
+  async function inserirPonto(tipoReal) {
     const id = nanoid()
-    db.prepare(
+    await db.prepare(
       `INSERT INTO pontos (id, clinica_id, usuario_id, tipo, data_hora, latitude, longitude, distancia_metros, dentro_raio, foto_url)
-       VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, now(), ?, ?, ?, ?, ?)`,
     ).run(id, req.usuario.clinica_id, req.usuario.id, tipoReal, lat, lon, distancia, dentroRaio ? 1 : 0, fotoUrl)
     return id
   }
 
-  const idsGerados = tipo === TIPO_SEM_INTERVALO ? [inserirPonto('inicio_intervalo'), inserirPonto('fim_intervalo')] : [inserirPonto(tipo)]
+  const idsGerados = []
+  if (tipo === TIPO_SEM_INTERVALO) {
+    idsGerados.push(await inserirPonto('inicio_intervalo'))
+    idsGerados.push(await inserirPonto('fim_intervalo'))
+  } else {
+    idsGerados.push(await inserirPonto(tipo))
+  }
 
-  const registro = db.prepare('SELECT * FROM pontos WHERE id = ?').get(idsGerados[idsGerados.length - 1])
+  const registro = await db.prepare('SELECT * FROM pontos WHERE id = ?').get(idsGerados[idsGerados.length - 1])
   res.status(201).json({
     ...registro,
     tipo: tipo === TIPO_SEM_INTERVALO ? TIPO_SEM_INTERVALO : registro.tipo,
@@ -434,23 +440,23 @@ router.post('/', PODE_BATER_PONTO, uploadSelfiePonto.single('foto'), (req, res) 
 
 // Lançamento manual pelo RH/admin — sem foto nem geolocalização, pra corrigir
 // esquecimentos ou lançar histórico de quem não usa o app.
-router.post('/manual', GESTAO_RH, (req, res) => {
+router.post('/manual', GESTAO_RH, async (req, res) => {
   const { usuario_id, tipo, data, hora } = req.body
   if (!usuario_id || !tipo || !data || !hora) {
     return res.status(400).json({ error: 'usuario_id, tipo, data e hora são obrigatórios' })
   }
   if (!TIPOS.includes(tipo)) return res.status(400).json({ error: 'Tipo de marcação inválido' })
 
-  const usuario = db.prepare('SELECT id FROM usuarios WHERE id = ? AND clinica_id = ?').get(usuario_id, req.usuario.clinica_id)
+  const usuario = await db.prepare('SELECT id FROM usuarios WHERE id = ? AND clinica_id = ?').get(usuario_id, req.usuario.clinica_id)
   if (!usuario) return res.status(400).json({ error: 'Usuário inválido' })
 
   const id = nanoid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO pontos (id, clinica_id, usuario_id, tipo, data_hora, dentro_raio, lancado_manualmente, criado_por)
      VALUES (?, ?, ?, ?, ?, 1, 1, ?)`,
   ).run(id, req.usuario.clinica_id, usuario_id, tipo, `${data} ${hora}:00`, req.usuario.id)
 
-  res.status(201).json(db.prepare('SELECT * FROM pontos WHERE id = ?').get(id))
+  res.status(201).json(await db.prepare('SELECT * FROM pontos WHERE id = ?').get(id))
 })
 
 export default router

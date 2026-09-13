@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import { createServer } from 'node:http'
@@ -71,22 +72,22 @@ function tipoImagemPorUrl(url) {
   return 'image/png'
 }
 
-function buscarClinicaEPerfil(clinicaSlug, perfilSlug) {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE slug = ?').get(clinicaSlug)
+async function buscarClinicaEPerfil(clinicaSlug, perfilSlug) {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE slug = ?').get(clinicaSlug)
   if (!clinica) return null
-  const perfil = db.prepare('SELECT * FROM perfis_instalacao WHERE clinica_id = ? AND slug = ?').get(clinica.id, perfilSlug)
+  const perfil = await db.prepare('SELECT * FROM perfis_instalacao WHERE clinica_id = ? AND slug = ?').get(clinica.id, perfilSlug)
   if (!perfil) return null
   return { clinica, perfil }
 }
 
-app.get('/api/clinica-publica/:clinicaSlug', (req, res) => {
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE slug = ? AND ativo = 1').get(req.params.clinicaSlug)
+app.get('/api/clinica-publica/:clinicaSlug', async (req, res) => {
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE slug = ? AND ativo = 1').get(req.params.clinicaSlug)
   if (!clinica) return res.status(404).json({ error: 'Clínica não encontrada' })
   res.json({ nome: clinica.nome, logo_url: clinica.logo_app_url || clinica.logo_url, cor_primaria: clinica.cor_primaria })
 })
 
-app.get('/api/instalar-info/:clinicaSlug/:perfilSlug', (req, res) => {
-  const encontrado = buscarClinicaEPerfil(req.params.clinicaSlug, req.params.perfilSlug)
+app.get('/api/instalar-info/:clinicaSlug/:perfilSlug', async (req, res) => {
+  const encontrado = await buscarClinicaEPerfil(req.params.clinicaSlug, req.params.perfilSlug)
   if (!encontrado) return res.status(404).json({ error: 'Link de instalação não encontrado' })
   res.json({
     clinica_nome: encontrado.clinica.nome,
@@ -96,9 +97,9 @@ app.get('/api/instalar-info/:clinicaSlug/:perfilSlug', (req, res) => {
   })
 })
 
-app.get('/api/manifest/:clinicaSlug/:perfilSlug', (req, res) => {
+app.get('/api/manifest/:clinicaSlug/:perfilSlug', async (req, res) => {
   const { clinicaSlug, perfilSlug } = req.params
-  const encontrado = buscarClinicaEPerfil(clinicaSlug, perfilSlug)
+  const encontrado = await buscarClinicaEPerfil(clinicaSlug, perfilSlug)
   if (!encontrado) return res.status(404).json({ error: 'Link de instalação não encontrado' })
   const { clinica, perfil } = encontrado
   const logoClinica = clinica.logo_app_url || clinica.logo_url
@@ -197,31 +198,35 @@ io.on('connection', (socket) => {
     socket.join(sala)
   })
 
-  socket.on('enviar-mensagem', ({ sala, remetente, remetente_tipo, texto }) => {
-    if (!sala || !texto) return
-    const agendamento = db.prepare('SELECT clinica_id FROM agendamentos WHERE id = ?').get(sala)
-    if (!agendamento) return
-    const mensagem = {
-      id: nanoid(),
-      sala,
-      remetente: remetente ?? 'Anônimo',
-      remetente_tipo: remetente_tipo ?? 'paciente',
-      texto,
-      clinica_id: agendamento.clinica_id,
-      created_at: new Date().toISOString(),
+  socket.on('enviar-mensagem', async ({ sala, remetente, remetente_tipo, texto }) => {
+    try {
+      if (!sala || !texto) return
+      const agendamento = await db.prepare('SELECT clinica_id FROM agendamentos WHERE id = ?').get(sala)
+      if (!agendamento) return
+      const mensagem = {
+        id: nanoid(),
+        sala,
+        remetente: remetente ?? 'Anônimo',
+        remetente_tipo: remetente_tipo ?? 'paciente',
+        texto,
+        clinica_id: agendamento.clinica_id,
+        created_at: new Date().toISOString(),
+      }
+      await db.prepare(
+        `INSERT INTO mensagens (id, sala, remetente, remetente_tipo, texto, clinica_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        mensagem.id,
+        mensagem.sala,
+        mensagem.remetente,
+        mensagem.remetente_tipo,
+        mensagem.texto,
+        mensagem.clinica_id,
+        mensagem.created_at,
+      )
+      io.to(sala).emit('nova-mensagem', mensagem)
+    } catch (erro) {
+      console.error('Erro ao processar enviar-mensagem:', erro)
     }
-    db.prepare(
-      `INSERT INTO mensagens (id, sala, remetente, remetente_tipo, texto, clinica_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      mensagem.id,
-      mensagem.sala,
-      mensagem.remetente,
-      mensagem.remetente_tipo,
-      mensagem.texto,
-      mensagem.clinica_id,
-      mensagem.created_at,
-    )
-    io.to(sala).emit('nova-mensagem', mensagem)
   })
 
   // Sinalização WebRTC (mesh) para as salas de reunião — o servidor só repassa

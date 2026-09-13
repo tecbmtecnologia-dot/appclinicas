@@ -22,9 +22,9 @@ const SELECT_JOIN = `
   LEFT JOIN usuarios u ON u.id = pr.criado_por
 `
 
-function validarReferencias(clinicaId, paciente_id, medico_id) {
-  const paciente = db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(paciente_id, clinicaId)
-  const medico = db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, clinicaId)
+async function validarReferencias(clinicaId, paciente_id, medico_id) {
+  const paciente = await db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(paciente_id, clinicaId)
+  const medico = await db.prepare('SELECT id FROM medicos WHERE id = ? AND clinica_id = ?').get(medico_id, clinicaId)
   return Boolean(paciente) && Boolean(medico)
 }
 
@@ -38,7 +38,7 @@ function filtrarEvolucoesDeOutrem(registros, usuario) {
   )
 }
 
-router.get('/', ACESSO, (req, res) => {
+router.get('/', ACESSO, async (req, res) => {
   const { paciente_id } = req.query
   let sql = SELECT_JOIN + ' WHERE pr.clinica_id = ?'
   const params = [req.usuario.clinica_id]
@@ -47,24 +47,24 @@ router.get('/', ACESSO, (req, res) => {
     params.push(paciente_id)
   }
   sql += ' ORDER BY pr.data DESC'
-  const registros = filtrarEvolucoesDeOutrem(db.prepare(sql).all(...params), req.usuario)
+  const registros = filtrarEvolucoesDeOutrem(await db.prepare(sql).all(...params), req.usuario)
   res.json(registros)
 })
 
-router.get('/:id', ACESSO, (req, res) => {
-  const row = db.prepare(SELECT_JOIN + ' WHERE pr.id = ? AND pr.clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.get('/:id', ACESSO, async (req, res) => {
+  const row = await db.prepare(SELECT_JOIN + ' WHERE pr.id = ? AND pr.clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!row || filtrarEvolucoesDeOutrem([row], req.usuario).length === 0) {
     return res.status(404).json({ error: 'Prontuário não encontrado' })
   }
   res.json(row)
 })
 
-router.post('/', CRIACAO, (req, res) => {
+router.post('/', CRIACAO, async (req, res) => {
   const { paciente_id, medico_id, data, queixa, diagnostico, prescricao, pedido_exames, evolucao, observacoes } = req.body
   if (!paciente_id || !medico_id || !data) {
     return res.status(400).json({ error: 'paciente_id, medico_id e data são obrigatórios' })
   }
-  if (!validarReferencias(req.usuario.clinica_id, paciente_id, medico_id)) {
+  if (!(await validarReferencias(req.usuario.clinica_id, paciente_id, medico_id))) {
     return res.status(400).json({ error: 'Paciente ou médico inválido' })
   }
   const restritoEvolucao = ['enfermagem', 'pj'].includes(req.usuario.role)
@@ -79,7 +79,7 @@ router.post('/', CRIACAO, (req, res) => {
     return res.status(400).json({ error: 'Descreva a prescrição ou o pedido de exames' })
   }
   const id = nanoid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO prontuarios (id, clinica_id, paciente_id, medico_id, data, queixa, diagnostico, prescricao, pedido_exames, evolucao, observacoes, criado_por)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -96,17 +96,17 @@ router.post('/', CRIACAO, (req, res) => {
     restritoReceita ? null : observacoes ?? null,
     req.usuario.id,
   )
-  res.status(201).json(db.prepare(SELECT_JOIN + ' WHERE pr.id = ?').get(id))
+  res.status(201).json(await db.prepare(SELECT_JOIN + ' WHERE pr.id = ?').get(id))
 })
 
-router.get('/paciente/:pacienteId/receitas', DOCUMENTOS, (req, res) => {
+router.get('/paciente/:pacienteId/receitas', DOCUMENTOS, async (req, res) => {
   // Liberada pra maior parte dos perfis da clínica (recepção, financeiro etc.) —
   // só expõe o necessário para localizar e imprimir a receita, sem diagnóstico/
   // evolução/queixa do prontuário. Fisioterapeuta/consultora (pj) não têm acesso.
-  const paciente = db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
+  const paciente = await db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
   if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
 
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT pr.id, pr.data, m.nome AS medico_nome
        FROM prontuarios pr
@@ -118,15 +118,15 @@ router.get('/paciente/:pacienteId/receitas', DOCUMENTOS, (req, res) => {
   res.json(rows)
 })
 
-router.get('/paciente/:pacienteId/pedidos-exames', DOCUMENTOS, (req, res) => {
+router.get('/paciente/:pacienteId/pedidos-exames', DOCUMENTOS, async (req, res) => {
   // Liberada pra maior parte dos perfis da clínica (recepção, financeiro etc.) —
   // só expõe o necessário para localizar e imprimir o pedido de exames, sem
   // diagnóstico/evolução/queixa do prontuário. Fisioterapeuta/consultora (pj) não
   // têm acesso.
-  const paciente = db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
+  const paciente = await db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
   if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
 
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT pr.id, pr.data, m.nome AS medico_nome
        FROM prontuarios pr
@@ -138,50 +138,50 @@ router.get('/paciente/:pacienteId/pedidos-exames', DOCUMENTOS, (req, res) => {
   res.json(rows)
 })
 
-router.get('/paciente/:pacienteId/historico.pdf', ACESSO, (req, res) => {
-  const paciente = db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
+router.get('/paciente/:pacienteId/historico.pdf', ACESSO, async (req, res) => {
+  const paciente = await db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
   if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
 
   const registros = filtrarEvolucoesDeOutrem(
-    db.prepare(SELECT_JOIN + ' WHERE pr.paciente_id = ? AND pr.clinica_id = ? ORDER BY pr.data ASC').all(req.params.pacienteId, req.usuario.clinica_id),
+    await db.prepare(SELECT_JOIN + ' WHERE pr.paciente_id = ? AND pr.clinica_id = ? ORDER BY pr.data ASC').all(req.params.pacienteId, req.usuario.clinica_id),
     req.usuario,
   )
-  const fotos = db
+  const fotos = await db
     .prepare('SELECT * FROM fotos_paciente WHERE paciente_id = ? AND clinica_id = ? ORDER BY data ASC')
     .all(req.params.pacienteId, req.usuario.clinica_id)
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
 
   gerarHistoricoPacientePDF(res, { paciente, registros, fotos, clinica })
 })
 
-router.get('/:id/receita.pdf', DOCUMENTOS, (req, res) => {
-  const prontuario = db.prepare('SELECT * FROM prontuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.get('/:id/receita.pdf', DOCUMENTOS, async (req, res) => {
+  const prontuario = await db.prepare('SELECT * FROM prontuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!prontuario) return res.status(404).json({ error: 'Prontuário não encontrado' })
   if (!prontuario.prescricao) return res.status(400).json({ error: 'Este registro não tem prescrição' })
-  const paciente = db.prepare('SELECT * FROM pacientes WHERE id = ?').get(prontuario.paciente_id)
-  const medico = db.prepare('SELECT * FROM medicos WHERE id = ?').get(prontuario.medico_id)
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const paciente = await db.prepare('SELECT * FROM pacientes WHERE id = ?').get(prontuario.paciente_id)
+  const medico = await db.prepare('SELECT * FROM medicos WHERE id = ?').get(prontuario.medico_id)
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   gerarReceitaPDF(res, { prontuario, paciente, medico, clinica })
 })
 
-router.get('/:id/pedido-exames.pdf', DOCUMENTOS, (req, res) => {
-  const prontuario = db.prepare('SELECT * FROM prontuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.get('/:id/pedido-exames.pdf', DOCUMENTOS, async (req, res) => {
+  const prontuario = await db.prepare('SELECT * FROM prontuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!prontuario) return res.status(404).json({ error: 'Prontuário não encontrado' })
   if (!prontuario.pedido_exames) return res.status(400).json({ error: 'Este registro não tem pedido de exames' })
-  const paciente = db.prepare('SELECT * FROM pacientes WHERE id = ?').get(prontuario.paciente_id)
-  const medico = db.prepare('SELECT * FROM medicos WHERE id = ?').get(prontuario.medico_id)
-  const clinica = db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
+  const paciente = await db.prepare('SELECT * FROM pacientes WHERE id = ?').get(prontuario.paciente_id)
+  const medico = await db.prepare('SELECT * FROM medicos WHERE id = ?').get(prontuario.medico_id)
+  const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
   gerarPedidoExamesPDF(res, { prontuario, paciente, medico, clinica })
 })
 
-router.put('/:id', EDICAO, (req, res) => {
-  const existente = db.prepare('SELECT * FROM prontuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+router.put('/:id', EDICAO, async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM prontuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Prontuário não encontrado' })
   const merged = { ...existente, ...req.body }
-  if (!validarReferencias(req.usuario.clinica_id, merged.paciente_id, merged.medico_id)) {
+  if (!(await validarReferencias(req.usuario.clinica_id, merged.paciente_id, merged.medico_id))) {
     return res.status(400).json({ error: 'Paciente ou médico inválido' })
   }
-  db.prepare(
+  await db.prepare(
     `UPDATE prontuarios SET paciente_id=?, medico_id=?, data=?, queixa=?, diagnostico=?, prescricao=?, pedido_exames=?, evolucao=?, observacoes=? WHERE id=?`,
   ).run(
     merged.paciente_id,
@@ -195,11 +195,11 @@ router.put('/:id', EDICAO, (req, res) => {
     merged.observacoes,
     req.params.id,
   )
-  res.json(db.prepare(SELECT_JOIN + ' WHERE pr.id = ?').get(req.params.id))
+  res.json(await db.prepare(SELECT_JOIN + ' WHERE pr.id = ?').get(req.params.id))
 })
 
-router.delete('/:id', EDICAO, (req, res) => {
-  db.prepare('DELETE FROM prontuarios WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
+router.delete('/:id', EDICAO, async (req, res) => {
+  await db.prepare('DELETE FROM prontuarios WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
   res.status(204).end()
 })
 

@@ -19,21 +19,21 @@ function clinicaPublica(clinica) {
   }
 }
 
-router.post('/login', (req, res) => {
-  const { email, senha, lembrar } = req.body
+router.post('/login', async (req, res) => {
+  const { email, senha } = req.body
   if (!email || !senha) return res.status(400).json({ error: 'E-mail e senha são obrigatórios' })
 
-  const usuario = db.prepare('SELECT * FROM usuarios WHERE email = ?').get(String(email).toLowerCase())
+  const usuario = await db.prepare('SELECT * FROM usuarios WHERE email = ?').get(String(email).toLowerCase())
   if (!usuario || !usuario.ativo || !bcrypt.compareSync(senha, usuario.senha_hash)) {
     return res.status(401).json({ error: 'E-mail ou senha inválidos' })
   }
 
-  const clinica = usuario.clinica_id ? db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
+  const clinica = usuario.clinica_id ? await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
   if (usuario.clinica_id && (!clinica || !clinica.ativo)) {
     return res.status(403).json({ error: 'Esta clínica está inativa. Entre em contato com o suporte.' })
   }
 
-  const token = assinarToken(usuario, Boolean(lembrar))
+  const token = assinarToken(usuario)
   res.json({
     token,
     usuario: {
@@ -51,17 +51,17 @@ router.post('/login', (req, res) => {
   })
 })
 
-router.get('/me', requireAuth, (req, res) => {
-  const usuario = db
+router.get('/me', requireAuth, async (req, res) => {
+  const usuario = await db
     .prepare('SELECT id, nome, email, role, cargo, clinica_id, medico_id, sexo, foto_url, ativo FROM usuarios WHERE id = ?')
     .get(req.usuario.id)
   if (!usuario || !usuario.ativo) return res.status(401).json({ error: 'Usuário não encontrado' })
-  const clinica = usuario.clinica_id ? db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
+  const clinica = usuario.clinica_id ? await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
   res.json({ ...usuario, clinica: clinicaPublica(clinica) })
 })
 
-router.put('/me', requireAuth, (req, res) => {
-  const existente = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.usuario.id)
+router.put('/me', requireAuth, async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.usuario.id)
   if (!existente) return res.status(404).json({ error: 'Usuário não encontrado' })
 
   const { nome, email, senha, sexo } = req.body
@@ -69,7 +69,7 @@ router.put('/me', requireAuth, (req, res) => {
 
   const emailNormalizado = email ? String(email).toLowerCase() : existente.email
   if (emailNormalizado !== existente.email) {
-    const duplicado = db.prepare('SELECT id FROM usuarios WHERE email = ? AND id != ?').get(emailNormalizado, existente.id)
+    const duplicado = await db.prepare('SELECT id FROM usuarios WHERE email = ? AND id != ?').get(emailNormalizado, existente.id)
     if (duplicado) return res.status(409).json({ error: 'Já existe um usuário com este e-mail' })
   }
 
@@ -80,7 +80,7 @@ router.put('/me', requireAuth, (req, res) => {
     sexo: sexo !== undefined ? sexo || null : existente.sexo,
   }
 
-  db.prepare('UPDATE usuarios SET nome=?, email=?, senha_hash=?, sexo=? WHERE id=?').run(
+  await db.prepare('UPDATE usuarios SET nome=?, email=?, senha_hash=?, sexo=? WHERE id=?').run(
     merged.nome,
     merged.email,
     merged.senha_hash,
@@ -88,7 +88,7 @@ router.put('/me', requireAuth, (req, res) => {
     existente.id,
   )
 
-  const clinica = existente.clinica_id ? db.prepare('SELECT * FROM clinicas WHERE id = ?').get(existente.clinica_id) : null
+  const clinica = existente.clinica_id ? await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(existente.clinica_id) : null
   res.json({
     id: existente.id,
     nome: merged.nome,
@@ -103,14 +103,14 @@ router.put('/me', requireAuth, (req, res) => {
   })
 })
 
-router.post('/me/foto', requireAuth, uploadFotoUsuario.single('foto'), (req, res) => {
+router.post('/me/foto', requireAuth, uploadFotoUsuario.single('foto'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Envie um arquivo de imagem' })
   const fotoUrl = `/uploads/usuarios/${req.file.filename}`
-  db.prepare('UPDATE usuarios SET foto_url = ? WHERE id = ?').run(fotoUrl, req.usuario.id)
-  const usuario = db
+  await db.prepare('UPDATE usuarios SET foto_url = ? WHERE id = ?').run(fotoUrl, req.usuario.id)
+  const usuario = await db
     .prepare('SELECT id, nome, email, role, cargo, clinica_id, medico_id, sexo, foto_url, ativo FROM usuarios WHERE id = ?')
     .get(req.usuario.id)
-  const clinica = usuario.clinica_id ? db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
+  const clinica = usuario.clinica_id ? await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
   res.json({ ...usuario, clinica: clinicaPublica(clinica) })
 })
 
