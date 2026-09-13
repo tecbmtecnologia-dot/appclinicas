@@ -10,6 +10,7 @@
 
 import 'dotenv/config'
 import { DatabaseSync } from 'node:sqlite'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
@@ -26,7 +27,8 @@ const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data')
 const dbPath = path.join(dataDir, 'clinica.db')
 
 const sqlite = new DatabaseSync(dbPath, { readOnly: true })
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+const ca = fs.readFileSync(path.join(__dirname, '..', 'supabase-ca.crt'), 'utf8')
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { ca, rejectUnauthorized: true } })
 
 const tabelas = sqlite
   .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)

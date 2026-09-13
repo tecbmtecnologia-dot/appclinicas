@@ -1,8 +1,18 @@
 import pg from 'pg'
 import bcrypt from 'bcryptjs'
 import { nanoid } from 'nanoid'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const { Pool } = pg
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+// CA raiz do Supabase (mesmo certificado público para todos os projetos —
+// baixado de Project Settings -> Database -> SSL Configuration). Sem isso o
+// driver aceitaria qualquer certificado (risco de man-in-the-middle);
+// com isso, a conexão só fecha com um servidor que apresente um certificado
+// assinado por essa CA.
+const supabaseCa = fs.readFileSync(path.join(__dirname, 'supabase-ca.crt'), 'utf8')
 
 // COUNT(*)/SUM em bigint (ex: contagens) voltam do Postgres como string por
 // padrão do driver, pra não perder precisão acima de Number.MAX_SAFE_INTEGER.
@@ -20,7 +30,7 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: { ca: supabaseCa, rejectUnauthorized: true },
 })
 
 // Traduz os placeholders `?` (estilo node:sqlite/better-sqlite3, usados em

@@ -22,7 +22,8 @@ if (!process.env.DATABASE_URL) {
 }
 
 const sql = fs.readFileSync(path.resolve(__dirname, arquivo), 'utf8')
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+const ca = fs.readFileSync(path.join(__dirname, '..', 'supabase-ca.crt'), 'utf8')
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { ca, rejectUnauthorized: true } })
 
 console.log(`Aplicando ${arquivo} (${sql.length} caracteres)...`)
 await pool.query(sql)
