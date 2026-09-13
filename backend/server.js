@@ -60,6 +60,16 @@ app.use('/uploads', express.static(UPLOADS_DIR))
 
 app.get('/api/health', (req, res) => res.json({ ok: true }))
 
+// TEMPORÁRIO — exportação do banco pra migração Postgres. Remover logo em seguida
+// (ver commit seguinte). Só funciona se EXPORT_SECRET estiver definida no ambiente.
+app.get('/api/_export-db', (req, res) => {
+  if (!process.env.EXPORT_SECRET || req.query.token !== process.env.EXPORT_SECRET) {
+    return res.status(404).end()
+  }
+  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data')
+  res.download(path.join(dataDir, 'clinica.db'))
+})
+
 // Endpoints públicos (sem login) que alimentam o manifest.webmanifest dinâmico
 // por perfil de instalação — o navegador lê isso antes de qualquer autenticação,
 // no momento em que a pessoa instala o PWA na tela inicial do celular.
