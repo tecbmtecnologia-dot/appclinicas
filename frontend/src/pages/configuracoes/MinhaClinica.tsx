@@ -305,7 +305,7 @@ export default function MinhaClinica() {
             </Button>
           </div>
           <p className="text-xs text-slate-400 mb-2">
-            Define o ponto de referência para validar se o funcionário está na clínica ao bater o ponto.
+            Define o ponto de referência para validar se o funcionário está na clínica ao marcar o ponto.
           </p>
           <div className="grid grid-cols-3 gap-2">
             <div>

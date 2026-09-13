@@ -151,7 +151,7 @@ export default function Ponto() {
       }
       setStreamAtivo(true)
     } catch {
-      setErro('Não foi possível acessar a câmera. A foto é obrigatória para bater o ponto — permita o acesso e tente novamente.')
+      setErro('Não foi possível acessar a câmera. A foto é obrigatória para marcar o ponto — permita o acesso e tente novamente.')
     }
   }
 
@@ -192,7 +192,7 @@ export default function Ponto() {
     try {
       const posicao = await obterLocalizacao()
       if (!posicao) {
-        setErro('Não foi possível obter sua localização. Ative o GPS e permita o acesso à localização para bater o ponto.')
+        setErro('Não foi possível obter sua localização. Ative o GPS e permita o acesso à localização para marcar o ponto.')
         return
       }
       const registro = await pontosApi.bater({
@@ -309,9 +309,9 @@ export default function Ponto() {
           </div>
 
           <Button className="w-full justify-center" onClick={baterPonto} disabled={!tipoSelecionado || !fotoBlob || enviando}>
-            {enviando ? 'Registrando...' : `Bater ponto — ${tipoSelecionado ? ROTULOS_MARCACAO[tipoSelecionado] : ''}`}
+            {enviando ? 'Registrando...' : `Marcar ponto — ${tipoSelecionado ? ROTULOS_MARCACAO[tipoSelecionado] : ''}`}
           </Button>
-          {!fotoBlob && <p className="text-xs text-slate-400 mt-2 text-center">Tire a foto pra poder bater o ponto.</p>}
+          {!fotoBlob && <p className="text-xs text-slate-400 mt-2 text-center">Tire a foto pra poder marcar o ponto.</p>}
 
           {erro && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-3">{erro}</p>}
 
