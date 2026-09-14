@@ -1,9 +1,11 @@
 import { api, getToken } from './client'
-import type { PedidoExameResumo, Prontuario, ReceitaResumo } from '../types'
+import type { AuditoriaProntuario, PedidoExameResumo, Prontuario, ReceitaResumo } from '../types'
 
 export const prontuariosApi = {
   listarPorPaciente: (pacienteId: string) =>
     api.get<Prontuario[]>(`/prontuarios?paciente_id=${pacienteId}`),
+  listarAuditoriaPorPaciente: (pacienteId: string) =>
+    api.get<AuditoriaProntuario[]>(`/prontuarios/paciente/${pacienteId}/auditoria`),
   obter: (id: string) => api.get<Prontuario>(`/prontuarios/${id}`),
   listarReceitasPorPaciente: (pacienteId: string) =>
     api.get<ReceitaResumo[]>(`/prontuarios/paciente/${pacienteId}/receitas`),

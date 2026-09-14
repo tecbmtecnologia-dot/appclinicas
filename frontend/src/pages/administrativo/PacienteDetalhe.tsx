@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Activity, Camera, CheckCircle2, FileText, FlaskConical, Printer, Scissors, Trash2, UserCircle2 } from 'lucide-react'
+import { Activity, Camera, CheckCircle2, FileText, FlaskConical, Printer, Scissors, Shield, Trash2, UserCircle2 } from 'lucide-react'
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Select, Textarea } from '../../components/ui'
 import CapturaFoto from '../../components/CapturaFoto'
 import { buscarEnderecoPorCep, pacientesApi } from '../../api/pacientes'
@@ -20,6 +20,7 @@ import { cirurgiasApi } from '../../api/cirurgias'
 import { useAuth } from '../../contexts/AuthContext'
 import { ApiError } from '../../api/client'
 import type {
+  AuditoriaProntuario,
   ContratoPaciente,
   CorRaca,
   Cirurgia,
@@ -61,6 +62,21 @@ function formatarData(v?: string | null) {
   const d = new Date(v.includes('T') || v.includes(' ') ? v.replace(' ', 'T') : `${v}T00:00:00`)
   if (Number.isNaN(d.getTime())) return v
   return d.toLocaleDateString('pt-BR')
+}
+
+function formatarDataHora(v?: string | null) {
+  if (!v) return '—'
+  const d = new Date(v.replace(' ', 'T'))
+  if (Number.isNaN(d.getTime())) return v
+  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+const ACAO_AUDITORIA_LABEL: Record<string, string> = {
+  leitura: 'Visualizou o prontuário',
+  leitura_pdf_historico: 'Baixou o histórico em PDF',
+  criacao: 'Criou um registro',
+  edicao: 'Editou um registro',
+  exclusao: 'Excluiu um registro',
 }
 
 function statusPagamentoTone(status: string) {
@@ -143,6 +159,7 @@ const ABAS = [
   { id: 'financeiro', label: 'Financeiro' },
   { id: 'contratos', label: 'Contratos' },
   { id: 'cirurgias', label: 'Cirurgias' },
+  { id: 'auditoria', label: 'Auditoria' },
 ] as const
 type Aba = (typeof ABAS)[number]['id']
 
@@ -166,6 +183,8 @@ export default function PacienteDetalhe() {
   const podeExcluirContrato = role === 'admin' || role === 'coordenador'
   const podeExcluirNota = role === 'admin' || role === 'financeiro'
   const podeVerCirurgias = role ? ['admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'pj'].includes(role) : false
+  // Quem consultou/alterou o prontuário é função de governança — só quem responde pela clínica.
+  const podeVerAuditoria = role === 'admin' || role === 'coordenador'
   const podeVerFinanceiro = podeVerOrcamentos || podeVerPagamentos
   const ehEnfermagem = role === 'enfermagem' || role === 'pj'
   // Mesmas roles que já podem emitir prescrição/pedido de exames pelo prontuário
@@ -181,6 +200,7 @@ export default function PacienteDetalhe() {
     if (a.id === 'financeiro') return podeVerFinanceiro
     if (a.id === 'contratos') return podeVerContratos
     if (a.id === 'cirurgias') return podeVerCirurgias
+    if (a.id === 'auditoria') return podeVerAuditoria
     return true
   })
 
@@ -709,6 +729,24 @@ export default function PacienteDetalhe() {
     if (podeVerCirurgias && id) carregarCirurgias()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [podeVerCirurgias, id])
+
+  // --- Auditoria (quem acessou/alterou o prontuário) ---
+  const [auditoria, setAuditoria] = useState<AuditoriaProntuario[]>([])
+  const [carregandoAuditoria, setCarregandoAuditoria] = useState(false)
+
+  function carregarAuditoria() {
+    if (!id) return
+    setCarregandoAuditoria(true)
+    prontuariosApi
+      .listarAuditoriaPorPaciente(id)
+      .then(setAuditoria)
+      .finally(() => setCarregandoAuditoria(false))
+  }
+
+  useEffect(() => {
+    if (podeVerAuditoria && id) carregarAuditoria()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [podeVerAuditoria, id])
 
   // --- Documentos (emissão rápida de receita/pedido de exames, sem preencher evolução) ---
   const [receitasDocs, setReceitasDocs] = useState<ReceitaResumo[]>([])
@@ -1623,6 +1661,36 @@ export default function PacienteDetalhe() {
                         Baixar relatório
                       </Button>
                     )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {aba === 'auditoria' && podeVerAuditoria && (
+        <div>
+          <div className="mb-4">
+            <h2 className="font-semibold text-slate-800">Auditoria do prontuário</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Quem acessou ou alterou o prontuário deste paciente, e quando.</p>
+          </div>
+          {carregandoAuditoria ? (
+            <p className="text-sm text-slate-400">Carregando...</p>
+          ) : auditoria.length === 0 ? (
+            <EmptyState text="Nenhum acesso registrado ainda." icon={Shield} />
+          ) : (
+            <div className="space-y-2">
+              {auditoria.map((a) => (
+                <Card key={a.id} className="p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm text-slate-800">
+                        <span className="font-medium">{a.usuario_nome ?? 'Usuário removido'}</span>
+                        {a.usuario_role ? ` (${a.usuario_role})` : ''} — {ACAO_AUDITORIA_LABEL[a.acao] ?? a.acao}
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-400">{formatarDataHora(a.created_at)}</span>
                   </div>
                 </Card>
               ))}

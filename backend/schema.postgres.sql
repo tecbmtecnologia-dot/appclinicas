@@ -419,6 +419,24 @@ CREATE TABLE IF NOT EXISTS prontuarios (
   created_at TEXT NOT NULL DEFAULT (now()::text)
 );
 
+-- Log de acesso/alteração de prontuário (LGPD + rastreabilidade exigida em dado de
+-- saúde). Guarda nome/role de quem acessou NA HORA (não faz join com `usuarios`
+-- pra ler agora) — assim o registro continua correto mesmo se o usuário depois
+-- mudar de nome/cargo ou for removido do sistema. Sem FK pra prontuario_id/
+-- usuario_id de propósito: a linha de auditoria não pode desaparecer nem travar
+-- a exclusão de um prontuário ou de um usuário.
+CREATE TABLE IF NOT EXISTS prontuarios_auditoria (
+  id TEXT PRIMARY KEY,
+  clinica_id TEXT NOT NULL,
+  prontuario_id TEXT,
+  paciente_id TEXT NOT NULL,
+  usuario_id TEXT,
+  usuario_nome TEXT,
+  usuario_role TEXT,
+  acao TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (now()::text)
+);
+
 CREATE TABLE IF NOT EXISTS mensagens (
   id TEXT PRIMARY KEY,
   clinica_id TEXT NOT NULL,
@@ -537,6 +555,9 @@ CREATE INDEX IF NOT EXISTS idx_compromissos_medico ON compromissos(medico_id);
 CREATE INDEX IF NOT EXISTS idx_compromissos_data ON compromissos(data_hora);
 CREATE INDEX IF NOT EXISTS idx_prontuarios_clinica ON prontuarios(clinica_id);
 CREATE INDEX IF NOT EXISTS idx_prontuarios_paciente ON prontuarios(paciente_id);
+CREATE INDEX IF NOT EXISTS idx_prontuarios_auditoria_clinica ON prontuarios_auditoria(clinica_id);
+CREATE INDEX IF NOT EXISTS idx_prontuarios_auditoria_paciente ON prontuarios_auditoria(paciente_id);
+CREATE INDEX IF NOT EXISTS idx_prontuarios_auditoria_created_at ON prontuarios_auditoria(created_at);
 CREATE INDEX IF NOT EXISTS idx_mensagens_sala ON mensagens(sala);
 CREATE INDEX IF NOT EXISTS idx_usuarios_clinica ON usuarios(clinica_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_perfis_instalacao_slug ON perfis_instalacao(clinica_id, slug);

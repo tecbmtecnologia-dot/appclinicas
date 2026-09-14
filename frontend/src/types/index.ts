@@ -183,6 +183,15 @@ export interface Prontuario {
   paciente_nome?: string
 }
 
+export interface AuditoriaProntuario {
+  id: string
+  prontuario_id: string | null
+  usuario_nome: string | null
+  usuario_role: string | null
+  acao: 'leitura' | 'leitura_pdf_historico' | 'criacao' | 'edicao' | 'exclusao'
+  created_at: string
+}
+
 export type Role = 'super_admin' | 'admin' | 'coordenador' | 'medico' | 'enfermagem' | 'recepcao' | 'financeiro' | 'pj'
 
 export interface Usuario {

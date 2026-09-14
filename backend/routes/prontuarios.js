@@ -13,6 +13,23 @@ const EDICAO = requireRole('admin', 'coordenador', 'medico')
 // Receita/pedido de exames — fisioterapeuta e consultora (role pj) não têm mais
 // acesso a esses documentos, nem pra ver/imprimir os já emitidos.
 const DOCUMENTOS = requireRole('admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'financeiro')
+// Ver a trilha de auditoria é função de governança — só quem responde pela clínica.
+const AUDITORIA = requireRole('admin', 'coordenador')
+
+// Registra quem acessou/alterou prontuário (quem, quando, o quê — exigido por
+// regulação de saúde além da LGPD). Guarda nome/role NA HORA em vez de só o id,
+// pra continuar legível mesmo se o usuário for removido depois. Nunca deixa uma
+// falha de auditoria derrubar a operação clínica de verdade (try/catch isolado).
+async function registrarAuditoria(req, acao, { prontuarioId = null, pacienteId }) {
+  try {
+    await db.prepare(
+      `INSERT INTO prontuarios_auditoria (id, clinica_id, prontuario_id, paciente_id, usuario_id, usuario_nome, usuario_role, acao)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(nanoid(), req.usuario.clinica_id, prontuarioId, pacienteId, req.usuario.id, req.usuario.nome, req.usuario.role, acao)
+  } catch (erro) {
+    console.error('Falha ao registrar auditoria de prontuário:', erro)
+  }
+}
 
 const SELECT_JOIN = `
   SELECT pr.*, m.nome AS medico_nome, p.nome AS paciente_nome, u.role AS criado_por_role
@@ -48,6 +65,9 @@ router.get('/', ACESSO, async (req, res) => {
   }
   sql += ' ORDER BY pr.data DESC'
   const registros = filtrarEvolucoesDeOutrem(await db.prepare(sql).all(...params), req.usuario)
+  // Só registra como "acesso ao prontuário" quando é o histórico de UM paciente
+  // (uso real da tela) — sem paciente_id não identifica o que foi de fato consultado.
+  if (paciente_id) await registrarAuditoria(req, 'leitura', { pacienteId: paciente_id })
   res.json(registros)
 })
 
@@ -56,6 +76,7 @@ router.get('/:id', ACESSO, async (req, res) => {
   if (!row || filtrarEvolucoesDeOutrem([row], req.usuario).length === 0) {
     return res.status(404).json({ error: 'Prontuário não encontrado' })
   }
+  await registrarAuditoria(req, 'leitura', { prontuarioId: row.id, pacienteId: row.paciente_id })
   res.json(row)
 })
 
@@ -96,6 +117,7 @@ router.post('/', CRIACAO, async (req, res) => {
     restritoReceita ? null : observacoes ?? null,
     req.usuario.id,
   )
+  await registrarAuditoria(req, 'criacao', { prontuarioId: id, pacienteId: paciente_id })
   res.status(201).json(await db.prepare(SELECT_JOIN + ' WHERE pr.id = ?').get(id))
 })
 
@@ -151,6 +173,7 @@ router.get('/paciente/:pacienteId/historico.pdf', ACESSO, async (req, res) => {
     .all(req.params.pacienteId, req.usuario.clinica_id)
   const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)
 
+  await registrarAuditoria(req, 'leitura_pdf_historico', { pacienteId: req.params.pacienteId })
   gerarHistoricoPacientePDF(res, { paciente, registros, fotos, clinica })
 })
 
@@ -195,12 +218,31 @@ router.put('/:id', EDICAO, async (req, res) => {
     merged.observacoes,
     req.params.id,
   )
+  await registrarAuditoria(req, 'edicao', { prontuarioId: req.params.id, pacienteId: merged.paciente_id })
   res.json(await db.prepare(SELECT_JOIN + ' WHERE pr.id = ?').get(req.params.id))
 })
 
 router.delete('/:id', EDICAO, async (req, res) => {
+  const existente = await db.prepare('SELECT * FROM prontuarios WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+  if (!existente) return res.status(404).json({ error: 'Prontuário não encontrado' })
   await db.prepare('DELETE FROM prontuarios WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
+  await registrarAuditoria(req, 'exclusao', { prontuarioId: req.params.id, pacienteId: existente.paciente_id })
   res.status(204).end()
+})
+
+router.get('/paciente/:pacienteId/auditoria', AUDITORIA, async (req, res) => {
+  const paciente = await db.prepare('SELECT id FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.pacienteId, req.usuario.clinica_id)
+  if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
+  const registros = await db
+    .prepare(
+      `SELECT id, prontuario_id, usuario_nome, usuario_role, acao, created_at
+       FROM prontuarios_auditoria
+       WHERE paciente_id = ? AND clinica_id = ?
+       ORDER BY created_at DESC
+       LIMIT 500`,
+    )
+    .all(req.params.pacienteId, req.usuario.clinica_id)
+  res.json(registros)
 })
 
 export default router

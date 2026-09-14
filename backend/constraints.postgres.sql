@@ -111,6 +111,10 @@ DO $$ BEGIN ALTER TABLE prontuarios ADD CONSTRAINT fk_prontuarios_paciente FOREI
 DO $$ BEGIN ALTER TABLE prontuarios ADD CONSTRAINT fk_prontuarios_medico FOREIGN KEY (medico_id) REFERENCES medicos(id); EXCEPTION WHEN others THEN RAISE NOTICE 'Falhou fk_prontuarios_medico: %', SQLERRM; END $$;
 DO $$ BEGIN ALTER TABLE prontuarios ADD CONSTRAINT fk_prontuarios_criado_por FOREIGN KEY (criado_por) REFERENCES usuarios(id); EXCEPTION WHEN others THEN RAISE NOTICE 'Falhou fk_prontuarios_criado_por: %', SQLERRM; END $$;
 
+-- Sem FK pra prontuario_id/usuario_id (de propósito — ver comentário no schema.postgres.sql):
+-- a linha de auditoria precisa sobreviver mesmo se o prontuário ou o usuário forem removidos depois.
+DO $$ BEGIN ALTER TABLE prontuarios_auditoria ADD CONSTRAINT fk_prontuarios_auditoria_clinica FOREIGN KEY (clinica_id) REFERENCES clinicas(id); EXCEPTION WHEN others THEN RAISE NOTICE 'Falhou fk_prontuarios_auditoria_clinica: %', SQLERRM; END $$;
+
 DO $$ BEGIN ALTER TABLE mensagens ADD CONSTRAINT fk_mensagens_clinica FOREIGN KEY (clinica_id) REFERENCES clinicas(id); EXCEPTION WHEN others THEN RAISE NOTICE 'Falhou fk_mensagens_clinica: %', SQLERRM; END $$;
 
 DO $$ BEGIN ALTER TABLE perfis_instalacao ADD CONSTRAINT fk_perfis_instalacao_clinica FOREIGN KEY (clinica_id) REFERENCES clinicas(id); EXCEPTION WHEN others THEN RAISE NOTICE 'Falhou fk_perfis_instalacao_clinica: %', SQLERRM; END $$;
