@@ -12,7 +12,7 @@ Cruzado com o estado real do sistema em 13/09/2026. Ver `[[projeto-app-clinicas-
 
 ## Auditoria
 - [x] Log de quem acessou/alterou prontuário (quem, quando, o quê) — implementado em 2026-09-14. Tabela `prontuarios_auditoria`, gravada em toda leitura/criação/edição/exclusão de prontuário (`routes/prontuarios.js`), consultável na aba "Auditoria" da ficha do paciente (admin/coordenador).
-- [ ] Falta: log de tentativas de login malsucedidas.
+- [x] Log de tentativas de login malsucedidas — implementado em 2026-09-14. Tabela `login_tentativas` (e-mail, motivo, IP, data/hora), seção colapsável na tela Usuários (admin/coordenador veem só a própria clínica; super_admin vê tudo).
 
 ## Direitos do titular (na prática)
 - [x] Exportação dos dados de um paciente (portabilidade) — implementado em 2026-09-14. Botão "Exportar dados (LGPD)" na aba Dados da ficha do paciente (admin/coordenador), baixa um JSON com cadastro + prontuários + agendamentos + cirurgias + orçamentos + pagamentos + fotos + notas fiscais + contratos + sessões de fisioterapia.
