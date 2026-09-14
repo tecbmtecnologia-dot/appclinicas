@@ -334,10 +334,16 @@ router.get('/folha-frequencia.pdf', requireRole('admin', 'coordenador', 'finance
   // pra quase todo mundo mesmo quando alguém tem um dia customizado.
   const { inicio, fim } = limitesPeriodo(anoRef, mesRef, 20)
 
+  // Só os perfis que efetivamente batem ponto (mesmo conjunto de PODE_BATER_PONTO) — médico,
+  // pj e coordenador nunca registram ponto, então antes disso toda folha vinha com uma página
+  // "Nenhuma marcação de ponto neste período" pra cada um deles, mesmo quem nunca vai usar.
+  const rolesComPonto = ['admin', 'enfermagem', 'recepcao', 'financeiro']
   const usuarios =
     req.usuario.role === 'recepcao'
       ? await db.prepare('SELECT * FROM usuarios WHERE id = ? AND clinica_id = ? AND ativo = 1').all(req.usuario.id, req.usuario.clinica_id)
-      : await db.prepare('SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1 ORDER BY lower(nome)').all(req.usuario.clinica_id)
+      : await db
+          .prepare(`SELECT * FROM usuarios WHERE clinica_id = ? AND ativo = 1 AND role IN (${rolesComPonto.map(() => '?').join(',')}) ORDER BY lower(nome)`)
+          .all(req.usuario.clinica_id, ...rolesComPonto)
 
   const funcionarios = await Promise.all(usuarios.map(async (u) => {
     const periodoUsuario = limitesPeriodo(anoRef, mesRef, u.dia_fechamento_folha || 20)
@@ -457,6 +463,26 @@ router.post('/manual', GESTAO_RH, async (req, res) => {
   ).run(id, req.usuario.clinica_id, usuario_id, tipo, `${data} ${hora}:00`, req.usuario.id)
 
   res.status(201).json(await db.prepare('SELECT * FROM pontos WHERE id = ?').get(id))
+})
+
+// Correção de uma marcação já existente (data/hora errada, esqueceu de bater e o RH
+// lança depois com o dia certo etc.) — só quem já podia lançar manualmente.
+router.put('/:id', GESTAO_RH, async (req, res) => {
+  const { data, hora, tipo } = req.body
+  const existente = await db.prepare('SELECT * FROM pontos WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+  if (!existente) return res.status(404).json({ error: 'Marcação não encontrada' })
+  if (tipo !== undefined && !TIPOS.includes(tipo)) return res.status(400).json({ error: 'Tipo de marcação inválido' })
+  if (!data && !hora && tipo === undefined) return res.status(400).json({ error: 'Informe data, hora ou tipo pra alterar' })
+
+  const novaData = data || existente.data_hora.slice(0, 10)
+  const novaHora = hora || existente.data_hora.slice(11, 16)
+  const novoTipo = tipo !== undefined ? tipo : existente.tipo
+
+  await db.prepare(
+    `UPDATE pontos SET tipo = ?, data_hora = ?, editado_por = ?, editado_em = now() WHERE id = ?`,
+  ).run(novoTipo, `${novaData} ${novaHora}:00`, req.usuario.id, req.params.id)
+
+  res.json(await db.prepare('SELECT * FROM pontos WHERE id = ?').get(req.params.id))
 })
 
 export default router

@@ -291,6 +291,8 @@ export interface Ponto {
   foto_url?: string | null
   local_referencia?: string | null
   lancado_manualmente?: number
+  editado_por?: string | null
+  editado_em?: string | null
   created_at: string
 }
 

@@ -23,6 +23,8 @@ export const pontosApi = {
   },
   lancarManual: (dados: { usuario_id: string; tipo: TipoPonto; data: string; hora: string }) =>
     api.post<Ponto>('/pontos/manual', dados),
+  atualizar: (id: string, dados: { data?: string; hora?: string; tipo?: TipoPonto }) =>
+    api.put<Ponto>(`/pontos/${id}`, dados),
   abrirFolhaFrequenciaPdf: async (mes: number, ano: number) => {
     const res = await fetch(`/api/pontos/folha-frequencia.pdf?mes=${mes}&ano=${ano}`, {
       headers: { Authorization: `Bearer ${getToken() ?? ''}` },

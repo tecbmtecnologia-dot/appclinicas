@@ -59,6 +59,10 @@ export default function RelatorioPonto() {
   const [formManual, setFormManual] = useState(vazioManual)
   const [salvandoManual, setSalvandoManual] = useState(false)
   const [erroManual, setErroManual] = useState<string | null>(null)
+  const [editando, setEditando] = useState<Ponto | null>(null)
+  const [formEdicao, setFormEdicao] = useState({ data: '', hora: '', tipo: 'entrada' as TipoPonto })
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false)
+  const [erroEdicao, setErroEdicao] = useState<string | null>(null)
 
   function carregarResumo() {
     setCarregando(true)
@@ -91,6 +95,29 @@ export default function RelatorioPonto() {
       setErroManual(err instanceof ApiError ? err.message : 'Erro ao lançar o ponto manual.')
     } finally {
       setSalvandoManual(false)
+    }
+  }
+
+  function abrirEdicao(p: Ponto) {
+    const [data, horaCompleta] = p.data_hora.split(' ')
+    setEditando(p)
+    setFormEdicao({ data, hora: (horaCompleta ?? '00:00:00').slice(0, 5), tipo: p.tipo })
+    setErroEdicao(null)
+  }
+
+  async function salvarEdicao() {
+    if (!editando) return
+    setSalvandoEdicao(true)
+    setErroEdicao(null)
+    try {
+      await pontosApi.atualizar(editando.id, formEdicao)
+      setEditando(null)
+      if (verFotosDe) abrirFotos(verFotosDe)
+      carregarResumo()
+    } catch (err) {
+      setErroEdicao(err instanceof ApiError ? err.message : 'Erro ao salvar a alteração.')
+    } finally {
+      setSalvandoEdicao(false)
     }
   }
 
@@ -284,10 +311,18 @@ export default function RelatorioPonto() {
                     )}
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-slate-700">{ROTULOS_TIPO_PONTO[p.tipo]}</p>
-                      <p className="text-xs text-slate-400">{horario(p.data_hora)}</p>
+                      <p className="text-xs text-slate-400">
+                        {horario(p.data_hora)}
+                        {p.editado_em && <span className="text-amber-600"> · editado</span>}
+                      </p>
                     </div>
                   </div>
-                  <Badge tone={p.dentro_raio ? 'green' : 'amber'}>{p.dentro_raio ? 'No local' : 'Fora do raio'}</Badge>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge tone={p.dentro_raio ? 'green' : 'amber'}>{p.dentro_raio ? 'No local' : 'Fora do raio'}</Badge>
+                    <button onClick={() => abrirEdicao(p)} className="text-xs font-medium text-brand-700 hover:underline">
+                      Editar
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -337,6 +372,40 @@ export default function RelatorioPonto() {
             </Button>
             <Button onClick={salvarManual} disabled={salvandoManual || !formManual.usuario_id || !formManual.data || !formManual.hora}>
               {salvandoManual ? 'Salvando...' : 'Lançar'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!editando} onClose={() => setEditando(null)} title="Editar marcação de ponto">
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400">Corrige o dia/horário ou o tipo dessa marcação. A foto e a localização originais são mantidas.</p>
+          <div>
+            <Label>Tipo</Label>
+            <Select value={formEdicao.tipo} onChange={(e) => setFormEdicao({ ...formEdicao, tipo: e.target.value as TipoPonto })}>
+              <option value="entrada">Entrada</option>
+              <option value="inicio_intervalo">Início do intervalo</option>
+              <option value="fim_intervalo">Fim do intervalo</option>
+              <option value="saida">Saída</option>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Data</Label>
+              <Input type="date" value={formEdicao.data} onChange={(e) => setFormEdicao({ ...formEdicao, data: e.target.value })} />
+            </div>
+            <div>
+              <Label>Hora</Label>
+              <Input type="time" value={formEdicao.hora} onChange={(e) => setFormEdicao({ ...formEdicao, hora: e.target.value })} />
+            </div>
+          </div>
+          {erroEdicao && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erroEdicao}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setEditando(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={salvarEdicao} disabled={salvandoEdicao || !formEdicao.data || !formEdicao.hora}>
+              {salvandoEdicao ? 'Salvando...' : 'Salvar'}
             </Button>
           </div>
         </div>

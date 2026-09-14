@@ -112,6 +112,8 @@ CREATE TABLE IF NOT EXISTS pontos (
   foto_url TEXT,
   lancado_manualmente INTEGER NOT NULL DEFAULT 0,
   criado_por TEXT,
+  editado_por TEXT,
+  editado_em TEXT,
   created_at TEXT NOT NULL DEFAULT (now()::text)
 );
 
