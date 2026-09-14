@@ -9,6 +9,8 @@ export const pacientesApi = {
   atualizar: (id: string, data: Partial<Paciente>) =>
     api.put<Paciente>(`/pacientes/${id}`, data),
   remover: (id: string) => api.del<void>(`/pacientes/${id}`),
+  exportarDados: (id: string) => api.get<Record<string, unknown>>(`/pacientes/${id}/exportar-dados`),
+  anonimizar: (id: string) => api.post<Paciente>(`/pacientes/${id}/anonimizar`, {}),
   enviarFoto: (id: string, foto: Blob) => {
     const formData = new FormData()
     formData.append('foto', foto, 'foto.jpg')

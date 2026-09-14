@@ -9,6 +9,9 @@ import { gerarPulseiraPapelPDF, gerarPulseiraTermicaPDF } from '../pdfPulseiraPa
 const router = Router()
 const ESCRITA = requireRole('admin', 'coordenador', 'recepcao')
 const EXCLUSAO = requireRole('admin', 'coordenador', 'recepcao')
+// Exportar/anonimizar são ações de atendimento a pedido formal do titular (LGPD) — mesmo
+// nível de governança de quem vê a auditoria de prontuário, não o CRUD comum de paciente.
+const LGPD = requireRole('admin', 'coordenador')
 
 const CAMPOS_BASE = ['nome', 'cpf', 'rg', 'data_nascimento', 'telefone', 'email', 'convenio', 'endereco']
 const CAMPOS_EXTRA = [
@@ -120,6 +123,7 @@ const TABELAS_VINCULADAS = [
   { tabela: 'fotos_paciente', rotulo: 'fotos' },
   { tabela: 'notas_fiscais_paciente', rotulo: 'notas fiscais' },
   { tabela: 'contratos_paciente', rotulo: 'contratos' },
+  { tabela: 'sessoes_fisioterapia', rotulo: 'sessões de fisioterapia' },
 ]
 
 async function vinculosDoPaciente(pacienteId) {
@@ -144,6 +148,44 @@ router.delete('/:id', EXCLUSAO, async (req, res) => {
 
   await db.prepare('DELETE FROM pacientes WHERE id = ? AND clinica_id = ?').run(req.params.id, req.usuario.clinica_id)
   res.status(204).end()
+})
+
+// Direito de portabilidade/acesso da LGPD: reúne o cadastro + tudo que referencia esse
+// paciente em um único JSON. SELECT * (não uma lista fixa de colunas) de propósito — assim
+// continua completo mesmo que uma tabela ganhe campo novo no futuro sem alguém lembrar de
+// atualizar esta rota.
+router.get('/:id/exportar-dados', LGPD, async (req, res) => {
+  const paciente = await db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+  if (!paciente) return res.status(404).json({ error: 'Paciente não encontrado' })
+
+  const dados = { geradoEm: new Date().toISOString(), dadosCadastrais: paciente }
+  for (const { tabela } of TABELAS_VINCULADAS) {
+    dados[tabela] = await db
+      .prepare(`SELECT * FROM ${tabela} WHERE paciente_id = ? AND clinica_id = ? ORDER BY created_at`)
+      .all(req.params.id, req.usuario.clinica_id)
+  }
+  res.json(dados)
+})
+
+// Campos de identificação do paciente — o que precisa sumir num pedido de exclusão/
+// anonimização da LGPD. Dado clínico (prontuário) e financeiro (pagamentos, notas fiscais)
+// NÃO são apagados: ficam retidos vinculados ao cadastro anonimizado, porque prontuário
+// médico tem retenção legal obrigatória (Resolução CFM) independente da LGPD, e apagar
+// pagamento/nota fiscal quebraria o registro contábil/fiscal da clínica.
+const CAMPOS_ANONIMIZAVEIS = [
+  'cpf', 'rg', 'data_nascimento', 'telefone', 'email', 'endereco', 'cep', 'logradouro',
+  'numero', 'complemento', 'bairro', 'nome_responsavel', 'nome_mae', 'indicado_por',
+  'foto_url', 'cartao_cns',
+]
+
+router.post('/:id/anonimizar', LGPD, async (req, res) => {
+  const existente = await db.prepare('SELECT dados_anonimizados_em FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
+  if (!existente) return res.status(404).json({ error: 'Paciente não encontrado' })
+
+  const sets = ['nome=?', ...CAMPOS_ANONIMIZAVEIS.map((c) => `${c}=?`), 'dados_anonimizados_em=?']
+  const valores = ['Paciente removido a pedido (LGPD)', ...CAMPOS_ANONIMIZAVEIS.map(() => null), existente.dados_anonimizados_em || new Date().toISOString()]
+  await db.prepare(`UPDATE pacientes SET ${sets.join(', ')} WHERE id = ?`).run(...valores, req.params.id)
+  res.json(await db.prepare('SELECT * FROM pacientes WHERE id = ?').get(req.params.id))
 })
 
 export default router

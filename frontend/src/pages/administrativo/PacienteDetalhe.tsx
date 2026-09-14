@@ -317,6 +317,40 @@ export default function PacienteDetalhe() {
     }
   }
 
+  async function exportarDadosPaciente() {
+    if (!paciente) return
+    try {
+      const dados = await pacientesApi.exportarDados(paciente.id)
+      const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `dados-${paciente.nome.toLowerCase().replace(/\s+/g, '-')}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Erro ao exportar os dados do paciente.')
+    }
+  }
+
+  async function anonimizarPaciente() {
+    if (!paciente) return
+    if (
+      !confirm(
+        `Anonimizar o cadastro de ${paciente.nome}? Isso apaga nome, CPF, RG, telefone, e-mail, endereço e demais dados de identificação — SEM VOLTA ATRÁS. Prontuário, pagamentos e demais registros clínicos/financeiros continuam guardados (exigência legal), mas deixam de mostrar quem é o paciente.`,
+      )
+    )
+      return
+    try {
+      const atualizado = await pacientesApi.anonimizar(paciente.id)
+      setPaciente(atualizado)
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Erro ao anonimizar o paciente.')
+    }
+  }
+
   // --- Prontuário ---
   const [medicos, setMedicos] = useState<Medico[]>([])
   const [registros, setRegistros] = useState<ProntuarioType[]>([])
@@ -928,7 +962,10 @@ export default function PacienteDetalhe() {
                   </div>
                 )}
                 <div>
-                  <p className="font-semibold text-slate-800">{paciente.nome}</p>
+                  <p className="font-semibold text-slate-800 flex items-center gap-2">
+                    {paciente.nome}
+                    {paciente.dados_anonimizados_em && <Badge tone="amber">Dados anonimizados (LGPD)</Badge>}
+                  </p>
                   <p className="text-sm text-slate-500">{paciente.cpf || 'CPF não informado'}</p>
                 </div>
               </div>
@@ -959,6 +996,18 @@ export default function PacienteDetalhe() {
                     <Button variant="danger" onClick={removerPaciente}>
                       Remover
                     </Button>
+                  </>
+                )}
+                {podeVerAuditoria && (
+                  <>
+                    <Button variant="secondary" onClick={exportarDadosPaciente}>
+                      Exportar dados (LGPD)
+                    </Button>
+                    {!paciente.dados_anonimizados_em && (
+                      <Button variant="danger" onClick={anonimizarPaciente}>
+                        Anonimizar (LGPD)
+                      </Button>
+                    )}
                   </>
                 )}
               </div>

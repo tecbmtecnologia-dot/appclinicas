@@ -34,6 +34,7 @@ export interface Paciente {
   validade_carteira?: string | null
   cartao_cns?: string | null
   consentimento_lgpd_em?: string | null
+  dados_anonimizados_em?: string | null
   created_at: string
 }
 
