@@ -203,6 +203,14 @@ function ConteudoMenu({
           Desenvolvido por TECBM - Bruno Martins Tecnologia
           <img src="/logo-tecbm.png" alt="" className="h-3.5 w-auto object-contain" />
         </p>
+        <p className="mt-1 px-1 flex items-center justify-center gap-2 text-[10px] text-slate-400">
+          <a href="/privacidade" target="_blank" rel="noreferrer" className="hover:text-slate-600 underline">
+            Privacidade
+          </a>
+          <a href="/termos" target="_blank" rel="noreferrer" className="hover:text-slate-600 underline">
+            Termos de uso
+          </a>
+        </p>
       </div>
     </>
   )

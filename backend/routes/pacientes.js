@@ -76,9 +76,10 @@ router.post('/', ESCRITA, async (req, res) => {
   if (!nome) return res.status(400).json({ error: 'Nome é obrigatório' })
   const id = nanoid()
   const valores = CAMPOS_TODOS.map((campo) => valorCampo(campo, req.body[campo]))
+  const consentimentoLgpdEm = req.body.consentimento_lgpd ? new Date().toISOString() : null
   await db.prepare(
-    `INSERT INTO pacientes (id, clinica_id, ${CAMPOS_TODOS.join(', ')}) VALUES (?, ?, ${CAMPOS_TODOS.map(() => '?').join(', ')})`,
-  ).run(id, req.usuario.clinica_id, ...valores)
+    `INSERT INTO pacientes (id, clinica_id, ${CAMPOS_TODOS.join(', ')}, consentimento_lgpd_em) VALUES (?, ?, ${CAMPOS_TODOS.map(() => '?').join(', ')}, ?)`,
+  ).run(id, req.usuario.clinica_id, ...valores, consentimentoLgpdEm)
   res.status(201).json(await db.prepare('SELECT * FROM pacientes WHERE id = ?').get(id))
 })
 
@@ -86,7 +87,14 @@ router.put('/:id', ESCRITA, async (req, res) => {
   const existente = await db.prepare('SELECT * FROM pacientes WHERE id = ? AND clinica_id = ?').get(req.params.id, req.usuario.clinica_id)
   if (!existente) return res.status(404).json({ error: 'Paciente não encontrado' })
   const valores = CAMPOS_TODOS.map((campo) => (req.body[campo] !== undefined ? valorCampo(campo, req.body[campo]) : existente[campo]))
-  await db.prepare(`UPDATE pacientes SET ${CAMPOS_TODOS.map((c) => `${c}=?`).join(', ')} WHERE id=?`).run(...valores, req.params.id)
+  // consentimento_lgpd é booleano vindo do front; guardamos é o timestamp de quando foi
+  // marcado. Desmarcar registra revogação (limpa o timestamp); marcar não pisa numa data
+  // já existente, pra não "renovar" um consentimento dado há tempos sem o paciente saber.
+  let consentimentoLgpdEm = existente.consentimento_lgpd_em
+  if (req.body.consentimento_lgpd !== undefined) {
+    consentimentoLgpdEm = req.body.consentimento_lgpd ? existente.consentimento_lgpd_em || new Date().toISOString() : null
+  }
+  await db.prepare(`UPDATE pacientes SET ${CAMPOS_TODOS.map((c) => `${c}=?`).join(', ')}, consentimento_lgpd_em=? WHERE id=?`).run(...valores, consentimentoLgpdEm, req.params.id)
   res.json(await db.prepare('SELECT * FROM pacientes WHERE id = ?').get(req.params.id))
 })
 

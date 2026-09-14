@@ -36,6 +36,9 @@ import Receitas from './pages/receitas/Receitas'
 import PedidosExame from './pages/exames/PedidosExame'
 import Instalar from './pages/instalar/Instalar'
 import Relatorios from './pages/relatorios/Relatorios'
+import PoliticaPrivacidade from './pages/legal/PoliticaPrivacidade'
+import TermosUso from './pages/legal/TermosUso'
+import TermoConsentimentoPaciente from './pages/legal/TermoConsentimentoPaciente'
 import { estaEmModoKiosk } from './lib/standalone'
 import type { Role } from './types'
 
@@ -56,6 +59,9 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/entrar/:clinicaSlug" element={<Login />} />
       <Route path="/instalar/:clinicaSlug/:perfilSlug" element={<Instalar />} />
+      <Route path="/privacidade" element={<PoliticaPrivacidade />} />
+      <Route path="/termos" element={<TermosUso />} />
+      <Route path="/termo-consentimento-paciente" element={<TermoConsentimentoPaciente />} />
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
           <Route path="/" element={<Inicio />} />

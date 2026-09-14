@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS pacientes (
   plano TEXT,
   validade_carteira TEXT,
   cartao_cns TEXT,
+  consentimento_lgpd_em TIMESTAMPTZ,
   created_at TEXT NOT NULL DEFAULT (now()::text)
 );
 

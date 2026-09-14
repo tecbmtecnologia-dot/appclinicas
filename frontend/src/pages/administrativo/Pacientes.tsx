@@ -35,6 +35,7 @@ const vazio = {
   plano: '',
   validade_carteira: '',
   cartao_cns: '',
+  consentimento_lgpd: false,
 }
 
 type FormPaciente = typeof vazio
@@ -369,6 +370,23 @@ export default function Pacientes() {
               <Input value={form.cartao_cns} onChange={(e) => setForm({ ...form, cartao_cns: e.target.value })} />
             </div>
           </div>
+
+          <SecaoTitulo>LGPD</SecaoTitulo>
+          <label className="flex items-start gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={form.consentimento_lgpd}
+              onChange={(e) => setForm({ ...form, consentimento_lgpd: e.target.checked })}
+            />
+            <span>
+              Paciente (ou responsável legal) autorizou o tratamento dos dados de saúde para fins de atendimento na clínica, conforme{' '}
+              <a href="/termo-consentimento-paciente" target="_blank" rel="noreferrer" className="underline">
+                termo de consentimento
+              </a>
+              .
+            </span>
+          </label>
 
           {erroForm && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erroForm}</p>}
           <div className="flex justify-end gap-2 pt-2">

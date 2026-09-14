@@ -33,6 +33,7 @@ export interface Paciente {
   plano?: string | null
   validade_carteira?: string | null
   cartao_cns?: string | null
+  consentimento_lgpd_em?: string | null
   created_at: string
 }
 

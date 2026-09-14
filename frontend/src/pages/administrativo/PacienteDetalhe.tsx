@@ -124,6 +124,7 @@ const vazioDados = {
   plano: '',
   validade_carteira: '',
   cartao_cns: '',
+  consentimento_lgpd: false,
 }
 type FormDados = typeof vazioDados
 
@@ -240,6 +241,7 @@ export default function PacienteDetalhe() {
       plano: paciente.plano ?? '',
       validade_carteira: paciente.validade_carteira ?? '',
       cartao_cns: paciente.cartao_cns ?? '',
+      consentimento_lgpd: !!paciente.consentimento_lgpd_em,
     })
     setFotoBlob(null)
     setErroDados(null)
@@ -957,6 +959,14 @@ export default function PacienteDetalhe() {
               <div>
                 <p className="text-xs text-slate-400">Indicado por</p>
                 <p className="text-slate-700">{paciente.indicado_por || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Consentimento LGPD</p>
+                <p className={paciente.consentimento_lgpd_em ? 'text-emerald-700' : 'text-amber-600'}>
+                  {paciente.consentimento_lgpd_em
+                    ? `Aceito em ${new Date(paciente.consentimento_lgpd_em).toLocaleString('pt-BR')}`
+                    : 'Pendente'}
+                </p>
               </div>
             </div>
           </Card>
@@ -1940,6 +1950,23 @@ export default function PacienteDetalhe() {
             <Label>Indicado por</Label>
             <Input value={formDados.indicado_por} onChange={(e) => setFormDados({ ...formDados, indicado_por: e.target.value })} />
           </div>
+
+          <SecaoTitulo>LGPD</SecaoTitulo>
+          <label className="flex items-start gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={formDados.consentimento_lgpd}
+              onChange={(e) => setFormDados({ ...formDados, consentimento_lgpd: e.target.checked })}
+            />
+            <span>
+              Paciente (ou responsável legal) autorizou o tratamento dos dados de saúde, conforme{' '}
+              <a href="/termo-consentimento-paciente" target="_blank" rel="noreferrer" className="underline">
+                termo de consentimento
+              </a>
+              . Desmarcar registra revogação.
+            </span>
+          </label>
 
           <SecaoTitulo>Endereço</SecaoTitulo>
           <div className="grid grid-cols-2 gap-3">

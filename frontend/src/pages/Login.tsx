@@ -180,6 +180,14 @@ export default function Login() {
             Desenvolvido por TECBM - Bruno Martins Tecnologia
             <img src="/logo-tecbm.png" alt="" className="h-4 w-auto object-contain opacity-70" />
           </p>
+          <p className="flex items-center justify-center gap-3 text-[11px] text-slate-400 mt-1.5">
+            <a href="/privacidade" target="_blank" rel="noreferrer" className="hover:text-slate-600 underline">
+              Política de Privacidade
+            </a>
+            <a href="/termos" target="_blank" rel="noreferrer" className="hover:text-slate-600 underline">
+              Termos de Uso
+            </a>
+          </p>
         </div>
       </div>
     </div>
