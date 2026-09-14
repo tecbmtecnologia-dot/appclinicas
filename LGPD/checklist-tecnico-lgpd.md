@@ -15,9 +15,9 @@ Cruzado com o estado real do sistema em 13/09/2026. Ver `[[projeto-app-clinicas-
 - [ ] Falta: log de tentativas de login malsucedidas.
 
 ## Direitos do titular (na prática)
-- [ ] Falta: forma de exportar os dados de um paciente específico (portabilidade). Hoje só dá pra ver os dados espalhados pela interface, não existe um "exportar tudo".
-- [ ] Falta: forma de excluir/anonimizar dados de um paciente a pedido, sem quebrar histórico de outros registros (cirurgia, pagamento) que referenciam esse paciente.
-- [x] Parcial: a ficha do paciente (`PacienteDetalhe.tsx`) já reúne praticamente todos os dados dele em um lugar só — facilita implementar exportação no futuro.
+- [x] Exportação dos dados de um paciente (portabilidade) — implementado em 2026-09-14. Botão "Exportar dados (LGPD)" na aba Dados da ficha do paciente (admin/coordenador), baixa um JSON com cadastro + prontuários + agendamentos + cirurgias + orçamentos + pagamentos + fotos + notas fiscais + contratos + sessões de fisioterapia.
+- [x] Exclusão/anonimização de dados de um paciente a pedido — implementado em 2026-09-14 como **anonimização** (não exclusão física): apaga nome/CPF/RG/telefone/e-mail/endereço/foto etc., mantém prontuário e registros financeiros vinculados ao cadastro anonimizado. Decisão: prontuário médico tem retenção legal obrigatória (Resolução CFM) independente da LGPD, e apagar pagamento/nota fiscal quebraria o registro contábil da clínica — confirmado explicitamente com o usuário antes de implementar.
+- [x] A ficha do paciente (`PacienteDetalhe.tsx`) reúne praticamente todos os dados dele em um lugar só.
 
 ## Retenção e backup
 - [ ] Falta: política formal de retenção por tipo de dado (hoje não há rotina de expurgo, tudo fica indefinidamente).
@@ -35,4 +35,6 @@ Cruzado com o estado real do sistema em 13/09/2026. Ver `[[projeto-app-clinicas-
 ## Prioridade sugerida pra próxima sessão de código
 1. ~~Log de auditoria de acesso/alteração de prontuário~~ — feito em 2026-09-14.
 2. ~~Consentimento no cadastro do paciente (checkbox + timestamp salvo)~~ — já estava feito antes desta sessão (ver seção Consentimento acima, campo `consentimento_lgpd_em` em `pacientes`).
-3. Exportação/exclusão de dados do paciente (pode ser manual/via suporte no começo, não precisa ser self-service imediatamente).
+3. ~~Exportação/exclusão de dados do paciente~~ — feito em 2026-09-14 (exportação em JSON + anonimização, ver seção "Direitos do titular" acima).
+
+Itens técnicos que restam no checklist (nenhum bloqueante, ver seções acima): log de tentativas de login malsucedidas, política formal de retenção/backup, plano de resposta a incidente, e assinar o Termo de Operador×Controlador com cada clínica cliente (esse último não é código, é providência jurídica/comercial do Bruno).
