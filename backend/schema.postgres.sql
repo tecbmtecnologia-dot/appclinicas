@@ -508,6 +508,7 @@ CREATE TABLE IF NOT EXISTS contratos_paciente (
   id TEXT PRIMARY KEY,
   clinica_id TEXT NOT NULL,
   paciente_id TEXT NOT NULL,
+  tipo TEXT NOT NULL DEFAULT 'contrato',
   descricao TEXT,
   arquivo_url TEXT NOT NULL,
   nome_arquivo TEXT,

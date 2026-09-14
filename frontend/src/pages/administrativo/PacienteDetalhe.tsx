@@ -697,6 +697,27 @@ export default function PacienteDetalhe() {
   const [erroContrato, setErroContrato] = useState<string | null>(null)
   const inputContratoRef = useRef<HTMLInputElement>(null)
   const [gerandoContrato, setGerandoContrato] = useState(false)
+  const contratosGerais = contratos.filter((c) => c.tipo !== 'termo_saude')
+
+  // --- Termo de consentimento de dados de saúde (mesmo mecanismo dos contratos, tipo diferente) ---
+  const termosSaude = contratos.filter((c) => c.tipo === 'termo_saude')
+  const [enviandoTermoSaude, setEnviandoTermoSaude] = useState(false)
+  const [erroTermoSaude, setErroTermoSaude] = useState<string | null>(null)
+  const inputTermoSaudeRef = useRef<HTMLInputElement>(null)
+
+  async function enviarTermoSaude(arquivo: File) {
+    if (!id) return
+    setEnviandoTermoSaude(true)
+    setErroTermoSaude(null)
+    try {
+      await contratosPacienteApi.criar(id, arquivo, undefined, 'termo_saude')
+      carregarContratos()
+    } catch (err) {
+      setErroTermoSaude(err instanceof ApiError ? err.message : 'Erro ao enviar o termo.')
+    } finally {
+      setEnviandoTermoSaude(false)
+    }
+  }
 
   async function gerarContratoPdf() {
     if (!id) return
@@ -1628,11 +1649,11 @@ export default function PacienteDetalhe() {
         <div>
           {carregandoContratos ? (
             <p className="text-sm text-slate-400">Carregando...</p>
-          ) : contratos.length === 0 ? (
+          ) : contratosGerais.length === 0 ? (
             <p className="text-sm text-slate-400 mb-2">Nenhum contrato enviado.</p>
           ) : (
             <div className="space-y-1.5 mb-3">
-              {contratos.map((c) => (
+              {contratosGerais.map((c) => (
                 <div key={c.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2">
                   <a href={c.arquivo_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 min-w-0 text-brand-700 hover:text-brand-800">
                     <FileText className="h-4 w-4 shrink-0" />
@@ -1675,6 +1696,58 @@ export default function PacienteDetalhe() {
             imprimir e assinar, anexe o PDF assinado com "+ PDF" acima.
           </p>
           {erroContrato && <p className="text-sm text-red-600 mt-2">{erroContrato}</p>}
+
+          <hr className="my-4 border-slate-200" />
+
+          <h3 className="font-semibold text-slate-800 mb-2">Termo de Consentimento de Dados de Saúde</h3>
+          {carregandoContratos ? (
+            <p className="text-sm text-slate-400">Carregando...</p>
+          ) : termosSaude.length === 0 ? (
+            <p className="text-sm text-slate-400 mb-2">Nenhum termo enviado.</p>
+          ) : (
+            <div className="space-y-1.5 mb-3">
+              {termosSaude.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2">
+                  <a href={c.arquivo_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 min-w-0 text-brand-700 hover:text-brand-800">
+                    <FileText className="h-4 w-4 shrink-0" />
+                    <span className="text-sm truncate">{c.nome_arquivo || 'Termo de consentimento'}</span>
+                  </a>
+                  {podeExcluirContrato && (
+                    <button onClick={() => removerContrato(c)} className="text-slate-400 hover:text-red-600 shrink-0">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {podeEnviarContrato && (
+            <div className="flex flex-wrap gap-2">
+              <a href="/termo-consentimento-paciente" target="_blank" rel="noreferrer">
+                <Button variant="secondary" type="button">Ver modelo do termo</Button>
+              </a>
+              <input
+                ref={inputTermoSaudeRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const arquivo = e.target.files?.[0]
+                  if (arquivo) enviarTermoSaude(arquivo)
+                  e.target.value = ''
+                }}
+              />
+              <Button variant="secondary" onClick={() => inputTermoSaudeRef.current?.click()} disabled={enviandoTermoSaude}>
+                {enviandoTermoSaude ? 'Enviando...' : '+ PDF'}
+              </Button>
+            </div>
+          )}
+          <p className="text-xs text-slate-400 mt-2">
+            Imprima o modelo do termo, colha a assinatura do paciente (dado de saúde é categoria sensível pela LGPD) e anexe o
+            PDF assinado com "+ PDF" acima.
+          </p>
+          {erroTermoSaude && <p className="text-sm text-red-600 mt-2">{erroTermoSaude}</p>}
         </div>
       )}
 

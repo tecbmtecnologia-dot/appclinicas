@@ -506,6 +506,7 @@ export interface ContratoModelo {
 export interface ContratoPaciente {
   id: string
   paciente_id: string
+  tipo: 'contrato' | 'termo_saude'
   descricao?: string | null
   arquivo_url: string
   nome_arquivo?: string | null
