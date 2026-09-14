@@ -55,6 +55,9 @@ const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads')
 const origensPermitidas = process.env.CORS_ORIGIN?.split(',').map((o) => o.trim())
 
 const app = express()
+// Necessário pra `req.ip` refletir o IP real de quem acessa (não o do proxy do Render) —
+// usado no log de tentativas de login malsucedidas.
+app.set('trust proxy', true)
 app.use(cors(origensPermitidas ? { origin: origensPermitidas } : {}))
 app.use(express.json())
 app.use('/uploads', express.static(UPLOADS_DIR))

@@ -420,6 +420,19 @@ CREATE TABLE IF NOT EXISTS prontuarios (
   created_at TEXT NOT NULL DEFAULT (now()::text)
 );
 
+-- Log de tentativas de login malsucedidas (LGPD/segurança — ajuda a detectar tentativa de
+-- força bruta). `clinica_id` fica nulo quando o e-mail não bate com nenhum usuário
+-- cadastrado (não dá pra saber de qual clínica seria); sem FK de propósito, mesmo raciocínio
+-- de `prontuarios_auditoria` logo abaixo.
+CREATE TABLE IF NOT EXISTS login_tentativas (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  clinica_id TEXT,
+  motivo TEXT NOT NULL,
+  ip TEXT,
+  created_at TEXT NOT NULL DEFAULT (now()::text)
+);
+
 -- Log de acesso/alteração de prontuário (LGPD + rastreabilidade exigida em dado de
 -- saúde). Guarda nome/role de quem acessou NA HORA (não faz join com `usuarios`
 -- pra ler agora) — assim o registro continua correto mesmo se o usuário depois
@@ -559,6 +572,9 @@ CREATE INDEX IF NOT EXISTS idx_prontuarios_paciente ON prontuarios(paciente_id);
 CREATE INDEX IF NOT EXISTS idx_prontuarios_auditoria_clinica ON prontuarios_auditoria(clinica_id);
 CREATE INDEX IF NOT EXISTS idx_prontuarios_auditoria_paciente ON prontuarios_auditoria(paciente_id);
 CREATE INDEX IF NOT EXISTS idx_prontuarios_auditoria_created_at ON prontuarios_auditoria(created_at);
+CREATE INDEX IF NOT EXISTS idx_login_tentativas_email ON login_tentativas(email);
+CREATE INDEX IF NOT EXISTS idx_login_tentativas_clinica ON login_tentativas(clinica_id);
+CREATE INDEX IF NOT EXISTS idx_login_tentativas_created_at ON login_tentativas(created_at);
 CREATE INDEX IF NOT EXISTS idx_mensagens_sala ON mensagens(sala);
 CREATE INDEX IF NOT EXISTS idx_usuarios_clinica ON usuarios(clinica_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_perfis_instalacao_slug ON perfis_instalacao(clinica_id, slug);

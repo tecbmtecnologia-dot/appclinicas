@@ -5,9 +5,23 @@ import CapturaFoto from '../../components/CapturaFoto'
 import { usuariosApi, type UsuarioForm } from '../../api/usuarios'
 import { medicosApi } from '../../api/medicos'
 import { minhaClinicaApi } from '../../api/minhaClinica'
+import { authApi, type TentativaLoginMalsucedida } from '../../api/auth'
 import { useAuth } from '../../contexts/AuthContext'
 import { ApiError } from '../../api/client'
 import type { DiaSemanaCodigo, HorarioDia, Medico, Unidade, Usuario } from '../../types'
+
+const ROTULOS_MOTIVO_TENTATIVA: Record<TentativaLoginMalsucedida['motivo'], string> = {
+  usuario_nao_encontrado: 'E-mail não cadastrado',
+  usuario_inativo: 'Usuário desativado',
+  senha_invalida: 'Senha incorreta',
+  clinica_inativa: 'Clínica inativa',
+}
+
+function formatarDataHoraTentativa(v: string) {
+  const d = new Date(v.replace(' ', 'T'))
+  if (Number.isNaN(d.getTime())) return v
+  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
 
 const vazio: UsuarioForm = {
   nome: '',
@@ -89,6 +103,9 @@ export default function Usuarios() {
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [erroForm, setErroForm] = useState<string | null>(null)
+  const [tentativas, setTentativas] = useState<TentativaLoginMalsucedida[]>([])
+  const [carregandoTentativas, setCarregandoTentativas] = useState(true)
+  const [mostrarTentativas, setMostrarTentativas] = useState(false)
 
   function carregar() {
     setCarregando(true)
@@ -107,6 +124,14 @@ export default function Usuarios() {
   }
 
   useEffect(carregar, [])
+
+  useEffect(() => {
+    authApi
+      .tentativasLogin()
+      .then(setTentativas)
+      .catch(() => {})
+      .finally(() => setCarregandoTentativas(false))
+  }, [])
 
   function alternarDia(codigo: DiaSemanaCodigo) {
     setForm((f) => {
@@ -290,6 +315,48 @@ export default function Usuarios() {
           </div>
         </Card>
       )}
+
+      <div className="mt-6">
+        <button
+          type="button"
+          onClick={() => setMostrarTentativas((v) => !v)}
+          className="text-sm font-medium text-slate-600 hover:text-slate-800"
+        >
+          {mostrarTentativas ? '▾' : '▸'} Tentativas de login malsucedidas {tentativas.length > 0 && `(${tentativas.length})`}
+        </button>
+        {mostrarTentativas && (
+          <Card className="overflow-hidden mt-2">
+            {carregandoTentativas ? (
+              <p className="text-sm text-slate-400 p-4">Carregando...</p>
+            ) : tentativas.length === 0 ? (
+              <p className="text-sm text-slate-400 p-4">Nenhuma tentativa malsucedida registrada.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500 text-left">
+                    <tr>
+                      <th className="px-4 py-2.5 font-medium">E-mail tentado</th>
+                      <th className="px-4 py-2.5 font-medium">Motivo</th>
+                      <th className="px-4 py-2.5 font-medium">IP</th>
+                      <th className="px-4 py-2.5 font-medium">Quando</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tentativas.map((t, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        <td className="px-4 py-2.5 text-slate-700">{t.email}</td>
+                        <td className="px-4 py-2.5 text-slate-600">{ROTULOS_MOTIVO_TENTATIVA[t.motivo] ?? t.motivo}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{t.ip || '—'}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{formatarDataHoraTentativa(t.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
 
       <Modal open={modalAberto} onClose={() => setModalAberto(false)} title={editando ? 'Editar usuário' : 'Novo usuário'}>
         <div className="space-y-3">

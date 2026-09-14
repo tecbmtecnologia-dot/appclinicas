@@ -1,10 +1,23 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
+import { nanoid } from 'nanoid'
 import { db } from '../db.js'
-import { assinarToken, requireAuth } from '../auth.js'
+import { assinarToken, requireAuth, requireRole } from '../auth.js'
 import { uploadFotoUsuario } from '../upload.js'
 
 const router = Router()
+
+// Registra tentativa de login malsucedida (LGPD/segurança — rastro pra detectar força
+// bruta). Nunca deixa uma falha aqui derrubar a resposta de erro real do login.
+async function registrarTentativaFalha(email, clinicaId, motivo, req) {
+  try {
+    await db.prepare(
+      `INSERT INTO login_tentativas (id, email, clinica_id, motivo, ip) VALUES (?, ?, ?, ?, ?)`,
+    ).run(nanoid(), String(email || '').toLowerCase(), clinicaId ?? null, motivo, req.ip)
+  } catch (erro) {
+    console.error('Falha ao registrar tentativa de login:', erro)
+  }
+}
 
 function clinicaPublica(clinica) {
   if (!clinica) return null
@@ -24,12 +37,18 @@ router.post('/login', async (req, res) => {
   if (!email || !senha) return res.status(400).json({ error: 'E-mail e senha são obrigatórios' })
 
   const usuario = await db.prepare('SELECT * FROM usuarios WHERE email = ?').get(String(email).toLowerCase())
-  if (!usuario || !usuario.ativo || !bcrypt.compareSync(senha, usuario.senha_hash)) {
+  if (!usuario || !usuario.ativo) {
+    await registrarTentativaFalha(email, null, usuario ? 'usuario_inativo' : 'usuario_nao_encontrado', req)
+    return res.status(401).json({ error: 'E-mail ou senha inválidos' })
+  }
+  if (!bcrypt.compareSync(senha, usuario.senha_hash)) {
+    await registrarTentativaFalha(email, usuario.clinica_id, 'senha_invalida', req)
     return res.status(401).json({ error: 'E-mail ou senha inválidos' })
   }
 
   const clinica = usuario.clinica_id ? await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
   if (usuario.clinica_id && (!clinica || !clinica.ativo)) {
+    await registrarTentativaFalha(email, usuario.clinica_id, 'clinica_inativa', req)
     return res.status(403).json({ error: 'Esta clínica está inativa. Entre em contato com o suporte.' })
   }
 
@@ -112,6 +131,19 @@ router.post('/me/foto', requireAuth, uploadFotoUsuario.single('foto'), async (re
     .get(req.usuario.id)
   const clinica = usuario.clinica_id ? await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(usuario.clinica_id) : null
   res.json({ ...usuario, clinica: clinicaPublica(clinica) })
+})
+
+router.get('/tentativas-login', requireAuth, requireRole('super_admin', 'admin', 'coordenador'), async (req, res) => {
+  // super_admin (plataforma) vê tudo; admin/coordenador de uma clínica só veem tentativas
+  // já vinculadas à própria clínica (e-mail que não bate com nenhum usuário fica sem
+  // clinica_id — só a plataforma vê essas, não é possível atribuir a uma clínica específica).
+  const rows =
+    req.usuario.role === 'super_admin'
+      ? await db.prepare('SELECT email, motivo, ip, created_at FROM login_tentativas ORDER BY created_at DESC LIMIT 200').all()
+      : await db
+          .prepare('SELECT email, motivo, ip, created_at FROM login_tentativas WHERE clinica_id = ? ORDER BY created_at DESC LIMIT 200')
+          .all(req.usuario.clinica_id)
+  res.json(rows)
 })
 
 export default router
