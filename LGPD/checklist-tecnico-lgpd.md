@@ -11,7 +11,7 @@ Cruzado com o estado real do sistema em 13/09/2026. Ver `[[projeto-app-clinicas-
 - [x] Role de banco de produção sem privilégio de superusuário/DDL (`app_clinicas`, criado em 2026-09-13 substituindo o role `postgres` admin).
 
 ## Auditoria
-- [ ] **Falta**: log de quem acessou/alterou prontuário (quem, quando, o quê). Hoje não existe nenhum registro disso — é o item de maior risco pendente, porque dado de saúde exige rastreabilidade de acesso.
+- [x] Log de quem acessou/alterou prontuário (quem, quando, o quê) — implementado em 2026-09-14. Tabela `prontuarios_auditoria`, gravada em toda leitura/criação/edição/exclusão de prontuário (`routes/prontuarios.js`), consultável na aba "Auditoria" da ficha do paciente (admin/coordenador).
 - [ ] Falta: log de tentativas de login malsucedidas.
 
 ## Direitos do titular (na prática)
@@ -24,7 +24,7 @@ Cruzado com o estado real do sistema em 13/09/2026. Ver `[[projeto-app-clinicas-
 - [ ] Falta: confirmar rotina de backup do Postgres/Supabase (verificar no painel do Supabase se backup automático está ativo no plano contratado).
 
 ## Consentimento
-- [ ] Falta: tela de aceite de termos/política no cadastro do paciente, com registro de data/hora do aceite salvo no banco (hoje o cadastro de paciente não tem nenhum campo de consentimento).
+- [x] Tela de aceite de termos/política no cadastro do paciente, com registro de data/hora salvo no banco — em produção desde 2026-09-13 (checkbox em `Pacientes.tsx`/`PacienteDetalhe.tsx`, coluna `pacientes.consentimento_lgpd_em`, rotas públicas `/privacidade`, `/termos`, `/termo-consentimento-paciente`). Ainda não confirmado o teste do fluxo de escrita (POST/PUT paciente) com dado real em produção.
 - [ ] Falta: fluxo para coletar o Termo de Consentimento de Dados de Saúde (pode começar em papel/PDF assinado e anexado, como já é feito com contratos — reaproveitar o fluxo de "+ PDF" que já existe na aba Contratos do paciente).
 
 ## Governança
@@ -33,6 +33,6 @@ Cruzado com o estado real do sistema em 13/09/2026. Ver `[[projeto-app-clinicas-
 - [ ] Falta: assinar o Termo de Operador x Controlador (`termo-operador-controlador.md`) com cada clínica cliente atual e futura.
 
 ## Prioridade sugerida pra próxima sessão de código
-1. Log de auditoria de acesso/alteração de prontuário (maior risco, exigido por regulação de saúde independente da LGPD).
-2. Consentimento no cadastro do paciente (checkbox + timestamp salvo).
+1. ~~Log de auditoria de acesso/alteração de prontuário~~ — feito em 2026-09-14.
+2. ~~Consentimento no cadastro do paciente (checkbox + timestamp salvo)~~ — já estava feito antes desta sessão (ver seção Consentimento acima, campo `consentimento_lgpd_em` em `pacientes`).
 3. Exportação/exclusão de dados do paciente (pode ser manual/via suporte no começo, não precisa ser self-service imediatamente).
