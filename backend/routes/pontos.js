@@ -161,11 +161,97 @@ function periodoDe(dataISO, diaFechamento) {
   return { ano, mes }
 }
 
-// Saldo de banco de horas acumulado desde a admissão até o fim do período de
-// referência: soma tudo que foi trabalhado menos a meta de cada período já
-// iniciado (mesmo o atual, ainda em andamento) — carrega positivo/negativo
-// dos meses anteriores pro atual, em vez de zerar todo mês.
-async function saldoAcumulado(usuario, anoRef, mesRef) {
+const arred = (v) => Math.round(v * 100) / 100
+const CODIGOS_DIA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab']
+
+// Quantas horas a jornada cadastrada prevê pra uma data específica. Com
+// jornada_semanal, dia fora da escala (ex: sábado de quem só trabalha seg-sex)
+// prevê 0h — tudo que for trabalhado nele vira hora positiva.
+function horasPrevistasNoDia(jornada, dataISO) {
+  if (!jornada) return null
+  if (jornada.dias_semana) {
+    const codigo = CODIGOS_DIA[new Date(`${dataISO}T12:00:00`).getDay()]
+    if (jornada.variavel) return jornada.dias[codigo]?.horas_dia ?? 0
+    return jornada.dias_semana.includes(codigo) ? jornada.horas_dia : 0
+  }
+  return jornada.horas_dia
+}
+
+// Apuração dia a dia: trabalhado (entrada→saída menos o intervalo que de fato
+// foi feito) contra o previsto na jornada do dia. Quem não faz almoço trabalha
+// mais que o previsto → saldo positivo; quem estoura o intervalo → negativo.
+// Dia sem a saída batida (em andamento ou esquecida) fica sem saldo até ser
+// corrigido, pra não lançar um negativo falso no banco de horas.
+async function apurarPeriodo(usuario, inicio, fim) {
+  const registros = await db
+    .prepare(
+      `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
+    )
+    .all(usuario.id, inicio, fim)
+
+  const porDia = {}
+  for (const r of registros) {
+    const dia = r.data_hora.slice(0, 10)
+    if (!porDia[dia]) porDia[dia] = []
+    porDia[dia].push(r)
+  }
+
+  const jornada = jornadaDoUsuario(usuario)
+  let horasPositivas = 0
+  let horasNegativas = 0
+  let horasPrevistas = 0
+  const dias = Object.entries(porDia)
+    .map(([data, regs]) => {
+      const porTipo = {}
+      for (const r of regs) {
+        if (!porTipo[r.tipo]) porTipo[r.tipo] = r.data_hora
+      }
+      const trabalhado = calcularHorasTrabalhadas(regs) / 60
+      const completo = regs[regs.length - 1].tipo === 'saida'
+      const previsto = horasPrevistasNoDia(jornada, data)
+      const saldo = previsto != null && completo ? trabalhado - previsto : null
+      if (saldo != null) {
+        horasPrevistas += previsto
+        if (saldo > 0) horasPositivas += saldo
+        else horasNegativas += -saldo
+      }
+      return {
+        data,
+        entrada: porTipo.entrada || null,
+        inicio_intervalo: porTipo.inicio_intervalo || null,
+        fim_intervalo: porTipo.fim_intervalo || null,
+        saida: porTipo.saida || null,
+        trabalhado: arred(trabalhado),
+        previsto: previsto != null ? arred(previsto) : null,
+        completo,
+        saldo: saldo != null ? arred(saldo) : null,
+      }
+    })
+    .sort((a, b) => a.data.localeCompare(b.data))
+
+  return {
+    jornada,
+    dias,
+    total_registros: registros.length,
+    horas_trabalhadas: arred(calcularHorasTrabalhadas(registros) / 60),
+    horas_previstas: jornada ? arred(horasPrevistas) : null,
+    horas_positivas: jornada ? arred(horasPositivas) : null,
+    horas_negativas: jornada ? arred(horasNegativas) : null,
+    saldo: jornada ? arred(horasPositivas - horasNegativas) : null,
+  }
+}
+
+function diaAnterior(dataISO) {
+  const d = new Date(`${dataISO}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
+// Banco de horas: saldo dos meses anteriores (desde a admissão) + saldo do
+// período atual. Negativo de um mês passa pro seguinte, e as horas positivas
+// feitas depois vão abatendo o que o funcionário deve (e vice-versa).
+// `apuracaoPeriodo` é o resultado de apurarPeriodo pro período de referência.
+async function saldoAcumulado(usuario, anoRef, mesRef, apuracaoPeriodo) {
   const diaFechamento = usuario.dia_fechamento_folha || 20
   const admissaoISO = usuario.data_admissao || usuario.created_at.slice(0, 10)
   const periodoAdmissao = periodoDe(admissaoISO, diaFechamento)
@@ -174,11 +260,25 @@ async function saldoAcumulado(usuario, anoRef, mesRef) {
   if (nPeriodos <= 0) return null
 
   const { inicio: inicioAdmissao } = limitesPeriodo(periodoAdmissao.ano, periodoAdmissao.mes, diaFechamento)
-  const { fim } = limitesPeriodo(anoRef, mesRef, diaFechamento)
+  const { inicio: inicioPeriodo, fim } = limitesPeriodo(anoRef, mesRef, diaFechamento)
   const inicio = admissaoISO > inicioAdmissao ? admissaoISO : inicioAdmissao
 
+  if (apuracaoPeriodo.jornada) {
+    const anterior = nPeriodos > 1
+      ? await apurarPeriodo(usuario, inicio, diaAnterior(inicioPeriodo))
+      : { saldo: 0 }
+    return {
+      desde: admissaoISO,
+      periodos: nPeriodos,
+      saldo_anterior: anterior.saldo,
+      saldo_periodo: apuracaoPeriodo.saldo,
+      saldo: arred(anterior.saldo + apuracaoPeriodo.saldo),
+    }
+  }
+
+  // Sem jornada cadastrada não dá pra apurar dia a dia — cai na meta mensal fixa.
   const registros = await db
-    .prepare(`SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ?`)
+    .prepare(`SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`)
     .all(usuario.id, inicio, fim)
 
   const horasTrabalhadas = calcularHorasTrabalhadas(registros) / 60
@@ -187,9 +287,9 @@ async function saldoAcumulado(usuario, anoRef, mesRef) {
   return {
     desde: admissaoISO,
     periodos: nPeriodos,
-    meta_total: Math.round(metaTotal * 100) / 100,
-    horas_trabalhadas: Math.round(horasTrabalhadas * 100) / 100,
-    saldo: Math.round((horasTrabalhadas - metaTotal) * 100) / 100,
+    meta_total: arred(metaTotal),
+    horas_trabalhadas: arred(horasTrabalhadas),
+    saldo: arred(horasTrabalhadas - metaTotal),
   }
 }
 
@@ -276,26 +376,27 @@ router.get('/resumo', GESTAO_RH, async (req, res) => {
     // Período de referência = ciclo de fechamento do próprio usuário (ex: 21 do
     // mês anterior a 20 do mês de referência), não o mês-calendário.
     const { inicio, fim } = limitesPeriodo(anoRef, mesRef, u.dia_fechamento_folha || 20)
-    const registros = await db
-      .prepare(
-        `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
-      )
-      .all(u.id, inicio, fim)
-    const minutos = calcularHorasTrabalhadas(registros)
-    const horasTrabalhadas = minutos / 60
-    const saldoHoras = horasTrabalhadas - u.carga_horaria_mensal_horas
+    const apuracao = await apurarPeriodo(u, inicio, fim)
+    // Com jornada cadastrada, o saldo é a soma dos saldos diários (trabalhado x
+    // previsto em cada dia batido); sem jornada, cai na meta mensal fixa.
+    const saldoHoras = apuracao.jornada
+      ? apuracao.saldo
+      : arred(apuracao.horas_trabalhadas - (u.carga_horaria_mensal_horas || 0))
     return {
       usuario_id: u.id,
       usuario_nome: u.nome,
       foto_url: u.foto_url,
       role: u.role,
       periodo: { inicio, fim },
-      meta_horas: u.carga_horaria_mensal_horas,
-      horas_trabalhadas: Math.round(horasTrabalhadas * 100) / 100,
-      saldo_horas: Math.round(saldoHoras * 100) / 100,
-      saldo_acumulado: await saldoAcumulado(u, anoRef, mesRef),
-      total_registros: registros.length,
-      jornada: jornadaDoUsuario(u),
+      meta_horas: apuracao.jornada ? apuracao.horas_previstas : u.carga_horaria_mensal_horas,
+      horas_trabalhadas: apuracao.horas_trabalhadas,
+      horas_positivas: apuracao.horas_positivas,
+      horas_negativas: apuracao.horas_negativas,
+      dias_incompletos: apuracao.dias.filter((d) => !d.completo).length,
+      saldo_horas: saldoHoras,
+      saldo_acumulado: await saldoAcumulado(u, anoRef, mesRef, apuracao),
+      total_registros: apuracao.total_registros,
+      jornada: apuracao.jornada,
       semana_atual: await resumoSemana(u),
     }
   }))
@@ -347,41 +448,22 @@ router.get('/folha-frequencia.pdf', requireRole('admin', 'coordenador', 'finance
 
   const funcionarios = await Promise.all(usuarios.map(async (u) => {
     const periodoUsuario = limitesPeriodo(anoRef, mesRef, u.dia_fechamento_folha || 20)
-    const registros = await db
-      .prepare(
-        `SELECT tipo, data_hora FROM pontos WHERE usuario_id = ? AND substr(data_hora, 1, 10) BETWEEN ? AND ? ORDER BY data_hora ASC`,
-      )
-      .all(u.id, periodoUsuario.inicio, periodoUsuario.fim)
+    const apuracao = await apurarPeriodo(u, periodoUsuario.inicio, periodoUsuario.fim)
+    const acumulado = apuracao.jornada ? await saldoAcumulado(u, anoRef, mesRef, apuracao) : null
 
-    const porDia = {}
-    for (const r of registros) {
-      const dia = r.data_hora.slice(0, 10)
-      if (!porDia[dia]) porDia[dia] = []
-      porDia[dia].push(r)
+    return {
+      nome: u.nome,
+      jornada: apuracao.jornada,
+      dias: apuracao.dias,
+      totais: {
+        horas_trabalhadas: apuracao.horas_trabalhadas,
+        horas_positivas: apuracao.horas_positivas,
+        horas_negativas: apuracao.horas_negativas,
+        saldo_periodo: apuracao.saldo,
+        saldo_anterior: acumulado?.saldo_anterior ?? null,
+        saldo_acumulado: acumulado?.saldo ?? null,
+      },
     }
-
-    const jornada = jornadaDoUsuario(u)
-    const dias = Object.entries(porDia)
-      .map(([data, regs]) => {
-        const porTipo = {}
-        for (const r of regs) {
-          if (!porTipo[r.tipo]) porTipo[r.tipo] = r.data_hora
-        }
-        const trabalhado = calcularHorasTrabalhadas(regs) / 60
-        const saldo = jornada ? trabalhado - jornada.horas_dia : null
-        return {
-          data,
-          entrada: porTipo.entrada || null,
-          inicio_intervalo: porTipo.inicio_intervalo || null,
-          fim_intervalo: porTipo.fim_intervalo || null,
-          saida: porTipo.saida || null,
-          trabalhado: Math.round(trabalhado * 100) / 100,
-          saldo: saldo != null ? Math.round(saldo * 100) / 100 : null,
-        }
-      })
-      .sort((a, b) => a.data.localeCompare(b.data))
-
-    return { nome: u.nome, jornada, dias }
   }))
 
   const clinica = await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.usuario.clinica_id)

@@ -330,8 +330,12 @@ export interface SaldoAcumulado {
   // Desde quando o acúmulo conta (admissão, ou data de criação da conta se não tiver admissão cadastrada).
   desde: string
   periodos: number
-  meta_total: number
-  horas_trabalhadas: number
+  // Com jornada cadastrada: saldo dos meses anteriores + saldo do período atual.
+  saldo_anterior?: number
+  saldo_periodo?: number
+  // Sem jornada: cálculo antigo pela meta mensal fixa.
+  meta_total?: number
+  horas_trabalhadas?: number
   saldo: number
 }
 
@@ -343,6 +347,10 @@ export interface ResumoPontoUsuario {
   periodo?: { inicio: string; fim: string }
   meta_horas: number
   horas_trabalhadas: number
+  // null quando o funcionário não tem jornada cadastrada (sem apuração dia a dia).
+  horas_positivas: number | null
+  horas_negativas: number | null
+  dias_incompletos: number
   saldo_horas: number
   saldo_acumulado: SaldoAcumulado | null
   total_registros: number

@@ -184,10 +184,12 @@ export default function RelatorioPonto() {
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Funcionário</th>
                   <th className="px-4 py-2.5 font-medium">Jornada</th>
-                  <th className="px-4 py-2.5 font-medium">Meta do período</th>
+                  <th className="px-4 py-2.5 font-medium">Previsto</th>
                   <th className="px-4 py-2.5 font-medium">Horas trabalhadas</th>
+                  <th className="px-4 py-2.5 font-medium">Positivas</th>
+                  <th className="px-4 py-2.5 font-medium">Negativas</th>
                   <th className="px-4 py-2.5 font-medium">Saldo do período</th>
-                  <th className="px-4 py-2.5 font-medium">Saldo acumulado</th>
+                  <th className="px-4 py-2.5 font-medium">Banco de horas</th>
                   <th className="px-4 py-2.5 font-medium">Esta semana</th>
                   <th className="px-4 py-2.5 font-medium">Marcações</th>
                 </tr>
@@ -227,11 +229,22 @@ export default function RelatorioPonto() {
                     </td>
                     <td className="px-4 py-2.5 text-slate-600">{formatarHoras(r.meta_horas)}</td>
                     <td className="px-4 py-2.5 text-slate-600">{formatarHoras(r.horas_trabalhadas)}</td>
+                    <td className="px-4 py-2.5 text-green-700">
+                      {r.horas_positivas != null ? `+${formatarHoras(r.horas_positivas)}` : '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-red-700">
+                      {r.horas_negativas != null ? `-${formatarHoras(r.horas_negativas)}` : '—'}
+                    </td>
                     <td className="px-4 py-2.5">
                       <Badge tone={r.saldo_horas < 0 ? 'red' : r.saldo_horas > 0 ? 'green' : 'slate'}>
                         {r.saldo_horas > 0 ? '+' : ''}
                         {formatarHoras(r.saldo_horas)}
                       </Badge>
+                      {r.dias_incompletos > 0 && (
+                        <p className="text-[11px] text-amber-600 mt-1">
+                          {r.dias_incompletos} {r.dias_incompletos === 1 ? 'dia' : 'dias'} sem saída (fora do saldo)
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-2.5">
                       {r.saldo_acumulado ? (
@@ -240,6 +253,12 @@ export default function RelatorioPonto() {
                             {r.saldo_acumulado.saldo > 0 ? '+' : ''}
                             {formatarHoras(r.saldo_acumulado.saldo)}
                           </Badge>
+                          {r.saldo_acumulado.saldo_anterior != null && (
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              Meses anteriores: {r.saldo_acumulado.saldo_anterior > 0 ? '+' : ''}
+                              {formatarHoras(r.saldo_acumulado.saldo_anterior)}
+                            </p>
+                          )}
                           <p className="text-[11px] text-slate-400 mt-1">
                             desde {formatarData(r.saldo_acumulado.desde)} ({r.saldo_acumulado.periodos}{' '}
                             {r.saldo_acumulado.periodos === 1 ? 'mês' : 'meses'})
