@@ -28,7 +28,24 @@ export interface UnidadeForm {
   raio_metros?: number | null
 }
 
+export interface UsuarioClinica {
+  id: string
+  nome: string
+  email: string
+  role: string
+  cargo: string | null
+  ativo: number
+  created_at: string
+}
+
 export const clinicasApi = {
+  usuarios: {
+    listar: (clinicaId: string) => api.get<UsuarioClinica[]>(`/clinicas/${clinicaId}/usuarios`),
+    criar: (clinicaId: string, data: { nome: string; email: string; senha: string; role: string }) =>
+      api.post<UsuarioClinica>(`/clinicas/${clinicaId}/usuarios`, data),
+    resetarSenha: (clinicaId: string, usuarioId: string, senha: string) =>
+      api.put<void>(`/clinicas/${clinicaId}/usuarios/${usuarioId}/senha`, { senha }),
+  },
   listar: () => api.get<Clinica[]>('/clinicas'),
   criar: (data: ClinicaForm) => api.post<Clinica>('/clinicas', data),
   atualizar: (id: string, data: Partial<ClinicaForm>) => api.put<Clinica>(`/clinicas/${id}`, data),

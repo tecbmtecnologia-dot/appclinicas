@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Building2, MapPin, Phone, Plus, Trash2, Upload } from 'lucide-react'
-import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Textarea } from '../../components/ui'
-import { clinicasApi, type ClinicaForm } from '../../api/clinicas'
+import { Building2, KeyRound, MapPin, Phone, Plus, Trash2, Upload, Users } from 'lucide-react'
+import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Select, Textarea } from '../../components/ui'
+import { clinicasApi, type ClinicaForm, type UsuarioClinica } from '../../api/clinicas'
 import { ApiError } from '../../api/client'
 import type { Clinica, Unidade } from '../../types'
 
@@ -37,6 +37,18 @@ const MODULOS_OPCIONAIS: { valor: string; rotulo: string }[] = [
   { valor: 'fotos_pre_pos', rotulo: 'Fotos de pré/pós-operatório (prontuário)' },
 ]
 
+const rotulosRole: Record<string, string> = {
+  admin: 'Administrador',
+  coordenador: 'Coordenador(a)',
+  medico: 'Médico(a)',
+  enfermagem: 'Enfermagem',
+  recepcao: 'Recepção',
+  financeiro: 'Financeiro',
+  pj: 'PJ (comissionado)',
+}
+
+const novoUsuarioVazio = { nome: '', email: '', senha: '', role: 'admin' }
+
 function paraFormState(c: Clinica): FormState {
   return {
     nome: c.nome,
@@ -69,6 +81,71 @@ export default function Clinicas() {
   const [carregandoUnidades, setCarregandoUnidades] = useState(false)
   const [novaUnidade, setNovaUnidade] = useState({ nome: '', endereco: '', telefone: '' })
   const [salvandoUnidade, setSalvandoUnidade] = useState(false)
+
+  const [clinicaUsuarios, setClinicaUsuarios] = useState<Clinica | null>(null)
+  const [usuarios, setUsuarios] = useState<UsuarioClinica[]>([])
+  const [carregandoUsuarios, setCarregandoUsuarios] = useState(false)
+  const [resetando, setResetando] = useState<UsuarioClinica | null>(null)
+  const [novaSenha, setNovaSenha] = useState('')
+  const [salvandoSenha, setSalvandoSenha] = useState(false)
+  const [msgUsuarios, setMsgUsuarios] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null)
+
+  const [novoUsuario, setNovoUsuario] = useState(novoUsuarioVazio)
+  const [criandoUsuario, setCriandoUsuario] = useState(false)
+  const [mostrarNovoUsuario, setMostrarNovoUsuario] = useState(false)
+
+  function carregarUsuarios(clinicaId: string) {
+    setCarregandoUsuarios(true)
+    clinicasApi.usuarios
+      .listar(clinicaId)
+      .then(setUsuarios)
+      .catch(() => setMsgUsuarios({ tipo: 'erro', texto: 'Não foi possível carregar os usuários.' }))
+      .finally(() => setCarregandoUsuarios(false))
+  }
+
+  function abrirUsuarios(c: Clinica) {
+    setClinicaUsuarios(c)
+    setUsuarios([])
+    setResetando(null)
+    setMsgUsuarios(null)
+    setNovoUsuario(novoUsuarioVazio)
+    setMostrarNovoUsuario(false)
+    carregarUsuarios(c.id)
+  }
+
+  async function criarUsuario() {
+    if (!clinicaUsuarios) return
+    setCriandoUsuario(true)
+    setMsgUsuarios(null)
+    try {
+      const criado = await clinicasApi.usuarios.criar(clinicaUsuarios.id, novoUsuario)
+      setMsgUsuarios({ tipo: 'ok', texto: `Usuário ${criado.nome} cadastrado (login: ${criado.email}).` })
+      setNovoUsuario(novoUsuarioVazio)
+      setMostrarNovoUsuario(false)
+      carregarUsuarios(clinicaUsuarios.id)
+      carregar()
+    } catch (err) {
+      setMsgUsuarios({ tipo: 'erro', texto: err instanceof ApiError ? err.message : 'Erro ao cadastrar usuário.' })
+    } finally {
+      setCriandoUsuario(false)
+    }
+  }
+
+  async function salvarNovaSenha() {
+    if (!clinicaUsuarios || !resetando) return
+    setSalvandoSenha(true)
+    setMsgUsuarios(null)
+    try {
+      await clinicasApi.usuarios.resetarSenha(clinicaUsuarios.id, resetando.id, novaSenha)
+      setMsgUsuarios({ tipo: 'ok', texto: `Senha de ${resetando.nome} alterada.` })
+      setResetando(null)
+      setNovaSenha('')
+    } catch (err) {
+      setMsgUsuarios({ tipo: 'erro', texto: err instanceof ApiError ? err.message : 'Erro ao alterar a senha.' })
+    } finally {
+      setSalvandoSenha(false)
+    }
+  }
 
   function carregar() {
     setCarregando(true)
@@ -265,6 +342,9 @@ export default function Clinicas() {
               </div>
 
               <div className="flex justify-end gap-2 mt-4">
+                <Button variant="ghost" onClick={() => abrirUsuarios(c)}>
+                  <Users className="h-3.5 w-3.5" /> Usuários
+                </Button>
                 <Button variant="ghost" onClick={() => abrirEdicao(c)}>
                   Editar
                 </Button>
@@ -500,6 +580,131 @@ export default function Clinicas() {
               {salvando ? 'Salvando...' : 'Salvar'}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={clinicaUsuarios !== null}
+        onClose={() => setClinicaUsuarios(null)}
+        title={clinicaUsuarios ? `Usuários — ${clinicaUsuarios.nome}` : 'Usuários'}
+      >
+        <div className="space-y-2">
+          {msgUsuarios && (
+            <p
+              className={`text-sm rounded-lg px-3 py-2 border ${
+                msgUsuarios.tipo === 'ok'
+                  ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                  : 'text-red-600 bg-red-50 border-red-200'
+              }`}
+            >
+              {msgUsuarios.texto}
+            </p>
+          )}
+          {mostrarNovoUsuario ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+              <p className="text-xs font-medium text-slate-500">Novo usuário</p>
+              <div>
+                <Label>Nome</Label>
+                <Input value={novoUsuario.nome} onChange={(e) => setNovoUsuario({ ...novoUsuario, nome: e.target.value })} />
+              </div>
+              <div>
+                <Label>E-mail (login)</Label>
+                <Input
+                  type="email"
+                  value={novoUsuario.email}
+                  onChange={(e) => setNovoUsuario({ ...novoUsuario, email: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Senha</Label>
+                  <Input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="Mín. 6 caracteres"
+                    value={novoUsuario.senha}
+                    onChange={(e) => setNovoUsuario({ ...novoUsuario, senha: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Perfil</Label>
+                  <Select value={novoUsuario.role} onChange={(e) => setNovoUsuario({ ...novoUsuario, role: e.target.value })}>
+                    {Object.entries(rotulosRole).map(([valor, rotulo]) => (
+                      <option key={valor} value={valor}>
+                        {rotulo}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setMostrarNovoUsuario(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={criarUsuario}
+                  disabled={criandoUsuario || !novoUsuario.nome || !novoUsuario.email || novoUsuario.senha.length < 6}
+                >
+                  {criandoUsuario ? 'Salvando...' : 'Cadastrar'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <Button
+                onClick={() => {
+                  setMostrarNovoUsuario(true)
+                  setMsgUsuarios(null)
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" /> Novo usuário
+              </Button>
+            </div>
+          )}
+          {carregandoUsuarios ? (
+            <p className="text-sm text-slate-400">Carregando...</p>
+          ) : usuarios.length === 0 ? (
+            <p className="text-sm text-slate-400">Nenhum usuário cadastrado nesta clínica.</p>
+          ) : (
+            usuarios.map((u) => (
+              <div key={u.id} className="rounded-lg border border-slate-200 px-3 py-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-700 truncate">{u.nome}</p>
+                    <p className="text-xs text-slate-500 break-all select-all">{u.email}</p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      <Badge tone="blue">{rotulosRole[u.role] ?? u.role}</Badge>
+                      {!u.ativo && <Badge tone="red">Inativo</Badge>}
+                    </div>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setResetando(resetando?.id === u.id ? null : u)
+                      setNovaSenha('')
+                      setMsgUsuarios(null)
+                    }}
+                  >
+                    <KeyRound className="h-3.5 w-3.5" /> Resetar senha
+                  </Button>
+                </div>
+                {resetando?.id === u.id && (
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      type="text"
+                      placeholder="Nova senha (mín. 6 caracteres)"
+                      value={novaSenha}
+                      autoComplete="off"
+                      onChange={(e) => setNovaSenha(e.target.value)}
+                    />
+                    <Button onClick={salvarNovaSenha} disabled={salvandoSenha || novaSenha.length < 6}>
+                      {salvandoSenha ? 'Salvando...' : 'Salvar'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       </Modal>
     </div>

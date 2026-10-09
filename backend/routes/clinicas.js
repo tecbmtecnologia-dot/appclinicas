@@ -7,6 +7,8 @@ import { especialidadesParaTexto, comEspecialidadesArray, modulosParaTexto } fro
 import unidadesRouter from './unidades.js'
 
 const router = Router()
+// Mesma lista de routes/usuarios.js (super_admin não é criado por aqui).
+const ROLES_CLINICA = ['admin', 'coordenador', 'medico', 'enfermagem', 'recepcao', 'financeiro', 'pj']
 
 function gerarSlug(nome) {
   return String(nome)
@@ -149,6 +151,57 @@ router.post('/:id/logo', uploadLogo.single('logo'), async (req, res) => {
   const logoUrl = `/uploads/logos/${req.file.filename}`
   await db.prepare('UPDATE clinicas SET logo_url = ? WHERE id = ?').run(logoUrl, req.params.id)
   res.json(comEspecialidadesArray(await db.prepare('SELECT * FROM clinicas WHERE id = ?').get(req.params.id)))
+})
+
+// Usuários de uma clínica (só super_admin, montado em /api/clinicas) — pra
+// consultar o login de cada um e resetar senha sem precisar entrar na clínica.
+router.get('/:id/usuarios', async (req, res) => {
+  const rows = await db
+    .prepare(
+      `SELECT id, nome, email, role, cargo, ativo, created_at FROM usuarios
+       WHERE clinica_id = ? ORDER BY lower(nome)`,
+    )
+    .all(req.params.id)
+  res.json(rows)
+})
+
+// Cadastro básico (nome/e-mail/senha/perfil) — jornada, médico vinculado etc.
+// continuam sendo ajustados pelo admin dentro da própria clínica.
+router.post('/:id/usuarios', async (req, res) => {
+  const { nome, email, senha, role } = req.body
+  if (!nome || !email || !senha) return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios' })
+  if (String(senha).length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres' })
+  if (!ROLES_CLINICA.includes(role)) return res.status(400).json({ error: 'Perfil inválido' })
+
+  const clinica = await db.prepare('SELECT id FROM clinicas WHERE id = ?').get(req.params.id)
+  if (!clinica) return res.status(404).json({ error: 'Clínica não encontrada' })
+
+  const emailNormalizado = String(email).trim().toLowerCase()
+  const existente = await db.prepare('SELECT id FROM usuarios WHERE email = ?').get(emailNormalizado)
+  if (existente) return res.status(409).json({ error: 'Já existe um usuário com este e-mail' })
+
+  const id = nanoid()
+  await db
+    .prepare('INSERT INTO usuarios (id, clinica_id, nome, email, senha_hash, role) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, req.params.id, nome, emailNormalizado, bcrypt.hashSync(String(senha), 10), role)
+
+  res
+    .status(201)
+    .json(await db.prepare('SELECT id, nome, email, role, cargo, ativo, created_at FROM usuarios WHERE id = ?').get(id))
+})
+
+router.put('/:id/usuarios/:usuarioId/senha', async (req, res) => {
+  const { senha } = req.body
+  if (!senha || String(senha).length < 6) {
+    return res.status(400).json({ error: 'A nova senha deve ter ao menos 6 caracteres' })
+  }
+  const usuario = await db
+    .prepare('SELECT id FROM usuarios WHERE id = ? AND clinica_id = ?')
+    .get(req.params.usuarioId, req.params.id)
+  if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado nesta clínica' })
+
+  await db.prepare('UPDATE usuarios SET senha_hash = ? WHERE id = ?').run(bcrypt.hashSync(String(senha), 10), usuario.id)
+  res.status(204).end()
 })
 
 router.use(
