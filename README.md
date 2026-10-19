@@ -1,156 +1,95 @@
-# Clínicas Médicas — App Desktop e Mobile (PWA)
+# TecBM Clínicas — Sistema de Gestão para Clínicas Médicas (SaaS)
 
-Sistema de gestão **multi-clínica** (SaaS) com 4 módulos: **agendamento de consultas**,
-**prontuário eletrônico**, **gestão administrativa** (usuários, pacientes e médicos) e
-**telemedicina** (chat em tempo real). Um único sistema atende várias clínicas
-clientes ao mesmo tempo — cada uma só enxerga seus próprios dados, com logotipo e
-cor próprios. O front-end é um PWA — instalável tanto no desktop (Windows/Mac/Linux,
-via Chrome ou Edge) quanto no celular (Android/iOS, "Adicionar à tela inicial") — e
-funciona como um app nativo, sem precisar de loja de aplicativos.
+Plataforma **multi-clínica (SaaS / white-label)** para gestão de clínicas médicas: agenda, prontuário, cirurgias, financeiro, estoque, ponto eletrônico e telemedicina. Um único sistema atende várias clínicas clientes ao mesmo tempo, cada uma com seu logotipo e sua cor, e cada clínica enxerga somente os próprios dados.
 
-## Estrutura do projeto
+O front-end é um **PWA** instalável no computador (Chrome/Edge) e no celular (Android/iOS), e funciona como um app nativo, sem loja de aplicativos.
+
+🔗 **Em produção:** https://tecbmclinicas.netlify.app  
+_O acesso exige login, porque o sistema guarda dados de saúde. Posso apresentar o sistema funcionando em uma chamada._
+
+---
+
+## Módulos
+
+**Atendimento**
+- **Agenda** de consultas e de fisioterapia, presencial ou telemedicina
+- **Prontuário eletrônico** com histórico clínico do paciente e fotos
+- **Receitas** e **pedidos de exame** a partir de modelos da clínica, gerados em PDF
+- **Telemedicina** com chat em tempo real (Socket.io) vinculado à consulta
+- **Sala de reunião** com videochamada (WebRTC)
+
+**Cirurgias**
+- Agendamento por hospital, equipe de auxiliares e itens usados
+- Relatório da cirurgia em PDF
+
+**Administrativo e financeiro**
+- Pacientes, médicos, auxiliares, hospitais e usuários
+- Contratos do paciente a partir de modelo editável, gerados em PDF
+- Orçamentos, pagamentos, despesas, comissões dos médicos e relatórios
+- Controle de estoque
+- Etiqueta e pulseira de identificação do paciente em PDF
+
+**Ponto eletrônico**
+- Marcação de ponto com foto e localização
+- Banco de horas pela jornada, com saldo diário e acúmulo dos meses anteriores
+- Folha de frequência em PDF
+
+**Plataforma (dono do SaaS)**
+- Cadastro das clínicas clientes, cada uma com sua marca, e criação dos administradores de cada uma
+- Links de instalação do app por perfil (médico, recepção etc.) com o nome da clínica
+
+## Segurança e LGPD
+
+- Autenticação JWT com senhas em bcrypt e perfis de acesso: super admin, admin da clínica, médico e recepção
+- Isolamento dos dados por clínica em todas as rotas da API
+- **Log de auditoria** de acesso e alteração de prontuário
+- **Log de tentativas de login malsucedidas**
+- **Exportação e anonimização** dos dados do paciente (direitos do titular na LGPD)
+- Termo de consentimento do paciente, política de privacidade e termos de uso
+- Banco Postgres sem acesso pela API pública (RLS ativo, sem políticas): só o back-end acessa, por conexão com TLS validado
+- CORS restrito à origem do front-end
+
+## Tecnologias
+
+| Camada | Stack |
+|---|---|
+| Front-end | React 19, TypeScript, Vite, Tailwind CSS 4, React Router 7, vite-plugin-pwa |
+| Back-end | Node.js, Express 5, Socket.io, JWT, bcrypt, Multer (uploads), PDFKit (receitas, exames, contratos, relatórios e mais) |
+| Banco | PostgreSQL (Supabase) |
+| Deploy | Front-end no Netlify (com Edge Function) · API no Render · deploy contínuo pelo GitHub |
+
+## Arquitetura
 
 ```
-app-clinicas/
-├── backend/     # API local (Node.js + Express + SQLite + Socket.io)
-└── frontend/    # App React + Vite + TypeScript + Tailwind (PWA)
+ PWA (React + TS) ──► Netlify ──/api/*, /uploads/*──► API Node/Express (Render) ──► Postgres (Supabase)
+        │                                                    ▲
+        └──────────── Socket.io (chat da telemedicina) ──────┘
 ```
 
-## Pré-requisitos
+O Netlify repassa `/api` e `/uploads` para a API, então o front-end e a API parecem ter a mesma origem. Uma Edge Function entrega o manifest certo para os links de instalação por clínica.
 
-- **Node.js 22 ou superior** (o backend usa o módulo nativo `node:sqlite`, sem
-  precisar compilar nada). Verifique com `node -v`. Caso esteja em uma versão
-  mais antiga, baixe em https://nodejs.org.
+## Estrutura
 
-## Como rodar (desenvolvimento)
+```
+├── backend/    # API: rotas, geração de PDFs, autenticação, schema Postgres
+└── frontend/   # PWA React + TypeScript
+```
 
-Abra dois terminais.
+## Rodando localmente
 
-**Terminal 1 — Backend (API):**
 ```bash
+# API
 cd backend
-npm install
-npm run dev
-```
-A API sobe em `http://localhost:3001`. O banco de dados SQLite é criado
-automaticamente em `backend/data/clinica.db` na primeira execução.
+cp .env.example .env    # DATABASE_URL do Postgres, JWT_SECRET etc.
+npm install && npm run dev        # http://localhost:3001
 
-**Terminal 2 — Frontend (App):**
-```bash
+# Front-end (outro terminal)
 cd frontend
-npm install
-npm run dev
+npm install && npm run dev        # http://localhost:5173
 ```
-O app abre em `http://localhost:5173`. As chamadas para `/api/*` e o chat
-(`/socket.io`) são automaticamente redirecionadas para o backend (veja
-`vite.config.ts`).
 
-## Instalar como app (desktop e mobile)
+Na primeira execução, o back-end cria uma clínica de demonstração e os usuários iniciais. Defina senhas próprias antes de usar em produção.
 
-Com o app rodando (ou já publicado em produção):
-- **Desktop (Chrome/Edge):** clique no ícone de instalar que aparece na barra
-  de endereço, ou no menu ⋮ → "Instalar app".
-- **Celular (Android/Chrome):** menu ⋮ → "Adicionar à tela inicial".
-- **iPhone (Safari):** botão de compartilhar → "Adicionar à Tela de Início".
+---
 
-O app abre em janela própria, com ícone e sem a barra do navegador — como um
-aplicativo nativo.
-
-## Módulos implementados
-
-- **Login/autenticação**: todo o sistema exige login (JWT). Perfis: administrador
-  da plataforma (`super_admin`, gerencia as clínicas clientes), administrador de
-  clínica (`admin`, gerencia usuários/médicos/pacientes da própria clínica),
-  médico e recepção.
-- **Multi-clínica / white-label** (`/plataforma/clinicas`, só para `super_admin`):
-  cadastro das clínicas clientes, cada uma com logotipo e cor próprios, e criação
-  do primeiro usuário administrador de cada uma. Todos os dados (usuários,
-  pacientes, médicos, agendamentos, prontuários) são isolados por clínica.
-- **Usuários** (`/administrativo/usuarios`, só para `admin` da clínica): cadastro
-  de contas de acesso da clínica (administrador, médico, recepção).
-- **Agendamento** (`/agendamento`): criar, listar por dia, concluir e cancelar
-  consultas, com tipo presencial ou telemedicina.
-- **Prontuário eletrônico** (`/prontuario`): histórico clínico por paciente —
-  queixa, diagnóstico, prescrição e observações.
-- **Administrativo** (`/administrativo/pacientes` e `/medicos`): cadastro,
-  edição e remoção de pacientes e médicos.
-- **Telemedicina** (`/telemedicina`): chat em tempo real (Socket.io) vinculado
-  a cada consulta marcada como "telemedicina". O histórico de mensagens fica
-  salvo no banco.
-
-## Primeiro acesso
-
-Na primeira execução do backend, dois usuários são criados automaticamente
-(mostrados no terminal) e uma clínica de exemplo:
-
-- **Administrador da plataforma** (você, o dono do sistema — cadastra as
-  clínicas clientes): `super@plataforma.local` / `admin123`
-- **Administrador da Clínica Demo** (cadastra usuários, médicos e pacientes
-  daquela clínica): `admin@clinica.local` / `admin123`
-
-Troque as duas senhas depois do primeiro acesso (em `Usuários`, para o admin
-da clínica; o super admin ainda não tem tela própria de perfil — trocar a
-senha dele exige criar um novo usuário via API por enquanto).
-
-## Vendendo para novas clínicas
-
-Entre como administrador da plataforma e vá em **Clínicas** → **+ Nova
-clínica**. Informe nome, logotipo (URL de imagem) e cor da marca — e,
-opcionalmente, já crie o primeiro usuário administrador daquela clínica na
-mesma tela. A partir daí a clínica cliente usa o mesmo sistema, com sua
-própria marca, sem enxergar dados de nenhuma outra clínica.
-
-## Próximos passos sugeridos
-
-A base (API, banco multi-clínica, autenticação, PWA e os módulos com CRUD
-funcionando) está pronta para você evoluir. Algumas ideias, em ordem de
-complexidade:
-
-1. **Upload de logotipo** — hoje o logotipo da clínica é uma URL de imagem;
-   um upload direto (ex: para S3/Cloudinary) seria mais prático para o cliente.
-2. **Videochamada real na Telemedicina** — hoje é um chat de texto; vídeo via
-   WebRTC é um projeto à parte (ex: usando a biblioteca `simple-peer` ou um
-   serviço como Daily.co/Twilio Video).
-3. **Notificações** (lembrete de consulta por e-mail/SMS/push).
-4. **Relatórios e faturamento** (convênios, exportação de dados, cobrança das
-   clínicas clientes pela assinatura).
-5. ~~**Deploy em produção**~~ — feito, ver seção **Deploy** abaixo.
-
-## Deploy
-
-A infraestrutura de deploy já está preparada no repositório (`render.yaml` e
-`netlify.toml` na raiz). Falta só criar as contas/serviços e preencher as
-URLs — nada disso foi feito ainda:
-
-1. **Backend no Render**: crie um serviço a partir do `render.yaml` (New →
-   Blueprint, apontando pro repositório). Ele já vem com disco persistente
-   (o SQLite e os uploads continuam existindo entre deploys — a migração
-   para Postgres/Supabase fica para depois, como um projeto à parte).
-2. **Frontend no Netlify**: crie o site a partir do repositório (o
-   `netlify.toml` já configura build e rotas). Depois:
-   - No Render, edite a env var `CORS_ORIGIN` do backend para a URL real do
-     site Netlify (ex: `https://app-clinicas.netlify.app`).
-   - No `netlify.toml`, troque as duas ocorrências de `SEU-BACKEND` pela URL
-     real do serviço Render, e faça um novo deploy do Netlify.
-   - No Netlify, defina a env var de build `VITE_SOCKET_URL` com a URL do
-     Render (usada só pela videochamada/chat, que precisa de conexão direta
-     — o Netlify não repassa WebSocket pelas rotas do `/api`).
-3. **Supabase**: adiado por decisão — hoje o banco é SQLite com disco
-   persistente no Render, que já resolve não perder dados. Migrar as ~320
-   consultas SQL espalhadas em 33 arquivos de rotas para Postgres é um
-   projeto separado, para ser feito com calma quando o Supabase for
-   realmente ativado.
-
-**Limitação conhecida:** os links de instalação por perfil (`/instalar/:clinicaSlug/:perfilSlug`)
-hoje só ganham título/ícone certos rodando `npm run dev` — essa lógica está
-em um plugin do Vite que só existe em desenvolvimento. Em produção, o link
-ainda funciona (mostra o app normalmente), só o nome/ícone que aparecem ao
-instalar na tela inicial ficam com o nome genérico do PWA em vez do nome do
-perfil específico. Corrigir isso em produção fica pra depois.
-
-## Dados de exemplo
-
-Entre como admin da Clínica Demo (`admin@clinica.local` / `admin123`) e
-cadastre um médico e um paciente primeiro (`Administrativo`), depois use
-`Agendamento` para marcar uma consulta — inclusive de telemedicina, para
-testar o chat.
+Desenvolvido por **Bruno Martins da Silva** — [TEC BM Tecnologia](https://github.com/tecbmtecnologia-dot)
